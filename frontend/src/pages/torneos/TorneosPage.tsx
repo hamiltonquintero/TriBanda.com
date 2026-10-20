@@ -26,6 +26,28 @@ export default function TorneosPage() {
         )}
       </div>
 
+      {/* Banner Orientativo para Administradores */}
+      <div className="mb-6 bg-gradient-to-r from-emerald-800 via-emerald-700 to-green-900 text-white rounded-2xl p-4 sm:p-5 shadow-lg border border-emerald-600/30 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-3.5">
+          <div className="w-11 h-11 rounded-xl bg-white/10 backdrop-blur-sm border border-white/20 flex items-center justify-center text-2xl shadow-inner shrink-0">
+            🧭
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] uppercase font-black tracking-widest bg-emerald-400/20 text-emerald-300 border border-emerald-400/30 px-2 py-0.5 rounded-full">
+                Asistente Virtual TRIBANDA
+              </span>
+            </div>
+            <h2 className="text-base sm:text-lg font-heading font-black tracking-tight text-white mt-0.5">
+              Guía Interactiva Paso a Paso Integrada
+            </h2>
+            <p className="text-xs text-emerald-100/80 mt-0.5">
+              Haz clic en cualquier torneo abajo para abrir el asistente con los 4 pasos: <strong>1. Chulear Jugadores</strong> ➔ <strong>2. Sorteo Grupos</strong> ➔ <strong>3. Partidas y Marcadores</strong> ➔ <strong>4. Cuadro Playoffs 32</strong>.
+            </p>
+          </div>
+        </div>
+      </div>
+
       {isLoading && <p className="text-gray-500">Cargando...</p>}
 
       {!isLoading && torneos.length === 0 && (

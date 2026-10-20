@@ -96,6 +96,31 @@ export default function BracketPage() {
         )}
       </div>
 
+      {/* Banner de Guía Asistida en Bracket */}
+      <div className="bg-gradient-to-r from-amber-50 via-yellow-50 to-amber-50 border border-amber-200 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+        <div className="flex items-center gap-3">
+          <span className="w-9 h-9 rounded-xl bg-amber-500 text-black font-black text-sm flex items-center justify-center shrink-0 shadow-sm">
+            4
+          </span>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] uppercase font-black tracking-wider bg-amber-200 text-amber-900 px-2 py-0.5 rounded-full">
+                Paso 4: Cuadro Final (Playoffs 32)
+              </span>
+            </div>
+            <p className="text-xs text-gray-700 mt-0.5">
+              Al concluir la fase de grupos, presiona <strong>"Generar Cuadro Oficial"</strong> para sembrar a los clasificados en el cuadro bilateral hasta la Gran Final.
+            </p>
+          </div>
+        </div>
+        <Link
+          to={`/torneos/${torneoId}`}
+          className="text-xs font-bold text-amber-800 hover:text-amber-950 shrink-0 self-end sm:self-auto hover:underline"
+        >
+          ← Ver guía completa del torneo
+        </Link>
+      </div>
+
       {/* Panel de generación — solo admin */}
       {hasRole('admin') && (!data || data.rondas.length === 0) && (
         <div className="card space-y-4">

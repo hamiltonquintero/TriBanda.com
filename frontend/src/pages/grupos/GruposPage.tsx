@@ -228,6 +228,31 @@ export default function GruposPage() {
         </div>
       </div>
 
+      {/* Banner de Guía Asistida en Grupos */}
+      <div className="bg-gradient-to-r from-emerald-50 via-green-50 to-emerald-50 border border-emerald-200 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+        <div className="flex items-center gap-3">
+          <span className="w-9 h-9 rounded-xl bg-emerald-600 text-white font-black text-sm flex items-center justify-center shrink-0 shadow-sm">
+            2
+          </span>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] uppercase font-black tracking-wider bg-emerald-200 text-emerald-900 px-2 py-0.5 rounded-full">
+                Paso 2: Fase de Grupos
+              </span>
+            </div>
+            <p className="text-xs text-gray-700 mt-0.5">
+              Haz clic en <strong>"🎲 Sorteo automático"</strong> arriba para repartir los jugadores en los grupos. Luego presiona <strong>"⚡ Autogenerar Partidas"</strong> para crear los enfrentamientos.
+            </p>
+          </div>
+        </div>
+        <Link
+          to={`/torneos/${torneoId}`}
+          className="text-xs font-bold text-emerald-700 hover:text-emerald-900 shrink-0 self-end sm:self-auto hover:underline"
+        >
+          ← Ver guía completa del torneo
+        </Link>
+      </div>
+
       {/* Tabs: Por grupos vs Tabla general clasificados */}
       <div className="flex gap-2 border-b border-gray-200 pb-2">
         <button

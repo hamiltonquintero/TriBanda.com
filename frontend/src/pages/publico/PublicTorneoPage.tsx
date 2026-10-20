@@ -61,6 +61,14 @@ export default function PublicTorneoPage() {
               </span>
             </div>
             <div className="flex items-center gap-3">
+              <Link
+                to={`/torneos/${id}`}
+                className="btn-outline text-xs text-emerald-300 border-emerald-400/50 hover:bg-emerald-400/10 flex items-center gap-1"
+                title="Ir al panel de administración y guía paso a paso"
+              >
+                <span>🧭</span>
+                <span className="hidden sm:inline">Panel y</span> Guía
+              </Link>
               <button
                 onClick={() => setModoProyector(true)}
                 className="btn-outline text-xs text-accent-300 border-accent-400 hover:bg-accent-400/20"

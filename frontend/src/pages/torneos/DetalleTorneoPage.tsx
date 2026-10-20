@@ -243,16 +243,14 @@ export default function DetalleTorneoPage() {
       </div>
 
       {/* Guía Interactiva Asistida Paso a Paso */}
-      {hasRole('admin') && (
-        <GuiaInteractivaAdmin
-          torneo={torneo}
-          inscripciones={inscripciones}
-          onOpenInscribir={() => {
-            setSeleccionadosLote([]);
-            setModalInscribir(true);
-          }}
-        />
-      )}
+      <GuiaInteractivaAdmin
+        torneo={torneo}
+        inscripciones={inscripciones}
+        onOpenInscribir={() => {
+          setSeleccionadosLote([]);
+          setModalInscribir(true);
+        }}
+      />
 
       {/* Accesos rápidos */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">

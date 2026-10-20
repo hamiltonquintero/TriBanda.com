@@ -22,7 +22,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               Desarrollado por <strong className="text-emerald-400">Hamilton Quintero</strong>
             </span>
           </Link>
-          <nav className="flex flex-wrap items-center gap-4 text-sm">
+          <nav className="flex flex-wrap items-center gap-3 text-sm">
+            <Link to="/torneos" className="inline-flex items-center gap-1 text-xs bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 hover:bg-emerald-500/30 px-2.5 py-1 rounded-full transition font-bold shadow-2xs">
+              <span>🧭</span>
+              <span>Guía Paso a Paso</span>
+            </Link>
             <Link to="/torneos" className="hover:text-accent-400 transition font-medium text-white/90">Torneos</Link>
             <Link to="/dashboard" className="hover:text-accent-400 transition font-medium text-white/90">Dashboard</Link>
             <Link to="/publico" className="hover:text-accent-400 transition font-medium text-white/90">Público</Link>

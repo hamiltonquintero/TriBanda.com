@@ -147,6 +147,37 @@ export default function PartidasPage() {
           )}
         </div>
 
+        {/* Banner de Guía Asistida en Partidas */}
+        <div className="mt-4 bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 border border-emerald-200 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+          <div className="flex items-center gap-3">
+            <span className="w-9 h-9 rounded-xl bg-emerald-600 text-white font-black text-sm flex items-center justify-center shrink-0 shadow-sm">
+              3
+            </span>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] uppercase font-black tracking-wider bg-emerald-200 text-emerald-900 px-2 py-0.5 rounded-full">
+                  Paso 3: Arbitraje y Marcadores en Vivo
+                </span>
+                <span className="text-xs text-gray-500 hidden sm:inline">
+                  {totalFinalizadas} de {totalTodas} partidas terminadas
+                </span>
+              </div>
+              <p className="text-xs text-gray-700 mt-0.5">
+                Los jueces anotan entradas y carambolas en la <strong>Planilla Digital</strong>. Al terminar todas las partidas de grupo, el sistema calculará la tabla general para pasar al <strong>Paso 4 (Playoffs 32)</strong>.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+            <Link
+              to={`/torneos/${torneoId}`}
+              className="px-3 py-1.5 bg-white border border-emerald-300 text-emerald-800 rounded-xl text-xs font-bold hover:bg-emerald-50 transition shadow-2xs flex items-center gap-1"
+            >
+              <span className="material-icons text-sm">assignment</span>
+              <span>Ver Guía General</span>
+            </Link>
+          </div>
+        </div>
+
         {/* Barra de Filtros: Selector de Fase y Buscador */}
         <div className="mt-4 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
           
