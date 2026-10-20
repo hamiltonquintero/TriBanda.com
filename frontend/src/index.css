@@ -1,0 +1,153 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply text-gray-900 antialiased font-body;
+    background-color: #1a4a1a;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-heading;
+  }
+}
+
+/* ─── FONDO MESA DE BILLAR ────────────────────────────────────────── */
+.bg-billar {
+  background:
+    linear-gradient(135deg, rgba(27, 94, 32, 0.82) 0%, rgba(27, 94, 32, 0.65) 40%, rgba(20, 70, 20, 0.75) 100%),
+    url('https://images.unsplash.com/photo-1615722539220-e67db1e8e9b0?w=1920&q=80') center/cover no-repeat fixed;
+  background-color: #1B5E20;
+  min-height: 100vh;
+}
+
+/* Textura de fieltro verde (fallback sin imagen) */
+.bg-billar::before {
+  content: '';
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background:
+    radial-gradient(ellipse at 30% 50%, rgba(46, 125, 50, 0.3) 0%, transparent 70%),
+    radial-gradient(ellipse at 70% 30%, rgba(56, 142, 60, 0.2) 0%, transparent 60%),
+    radial-gradient(ellipse at 50% 80%, rgba(27, 94, 32, 0.4) 0%, transparent 50%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.bg-billar > * {
+  position: relative;
+  z-index: 1;
+}
+
+@layer components {
+  /* ─── INPUTS ──────────────────────────────────────────────────────── */
+  .input {
+    @apply w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm
+           focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent
+           transition bg-white;
+  }
+  .label {
+    @apply block text-sm font-medium text-gray-700 mb-1;
+  }
+  .error {
+    @apply text-red-500 text-xs mt-1;
+  }
+
+  /* ─── BOTONES ─────────────────────────────────────────────────────── */
+  .btn-primary {
+    @apply bg-primary-600 hover:bg-primary-500 text-white text-sm font-semibold
+           px-5 py-2.5 rounded-lg transition shadow-md
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-secondary {
+    @apply bg-accent-400 hover:bg-accent-500 text-gray-900 text-sm font-semibold
+           px-5 py-2.5 rounded-lg transition shadow-md;
+  }
+  .btn-outline {
+    @apply bg-white/10 hover:bg-white/20 text-white text-sm font-medium
+           px-4 py-2 rounded-lg border border-white/30 transition backdrop-blur-sm;
+  }
+
+  /* ─── TARJETAS CON GLASSMORPHISM ──────────────────────────────────── */
+  .card {
+    @apply bg-white/95 backdrop-blur-sm rounded-xl shadow-lg p-5 border-l-4 border-accent-400;
+  }
+  .card-flat {
+    @apply bg-white/95 backdrop-blur-sm rounded-xl shadow-lg p-5;
+  }
+  .card-dark {
+    @apply bg-black/40 backdrop-blur-md text-white rounded-2xl p-6 border border-white/10;
+  }
+  .card-glass {
+    @apply bg-white/10 backdrop-blur-md rounded-xl p-5 border border-white/20 text-white;
+  }
+
+  /* ─── TABLAS ──────────────────────────────────────────────────────── */
+  .table-billar {
+    @apply w-full text-sm;
+  }
+  .table-billar thead {
+    @apply bg-primary-600 text-white;
+  }
+  .table-billar th {
+    @apply px-4 py-3 text-left font-semibold text-xs uppercase tracking-wider;
+  }
+  .table-billar td {
+    @apply px-4 py-3 border-b border-gray-100;
+  }
+  .table-billar tbody tr:hover {
+    @apply bg-primary-50;
+  }
+
+  /* ─── BADGES ──────────────────────────────────────────────────────── */
+  .badge-amber {
+    @apply inline-block px-3 py-1 bg-accent-400 text-gray-900 text-xs font-bold
+           rounded-full uppercase tracking-wider;
+  }
+  .badge-green {
+    @apply inline-block px-3 py-1 bg-primary-500 text-white text-xs font-bold
+           rounded-full;
+  }
+  .badge-gray {
+    @apply inline-block px-3 py-1 bg-gray-100 text-gray-600 text-xs font-medium
+           rounded-full;
+  }
+
+  /* ─── ESTADO BADGES ───────────────────────────────────────────────── */
+  .estado-pendiente { @apply bg-gray-100 text-gray-600; }
+  .estado-en_curso { @apply bg-accent-100 text-accent-600; }
+  .estado-finalizada { @apply bg-green-100 text-green-700; }
+  .estado-borrador { @apply bg-yellow-100 text-yellow-800; }
+  .estado-activo { @apply bg-green-100 text-green-800; }
+  .estado-finalizado { @apply bg-gray-100 text-gray-600; }
+}
+
+/* ─── RESPONSIVE MOBILE ───────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .table-billar th,
+  .table-billar td {
+    @apply px-2 py-2 text-xs;
+  }
+
+  .card, .card-flat, .card-dark, .card-glass {
+    @apply p-3;
+  }
+
+  .btn-primary, .btn-secondary, .btn-outline {
+    @apply px-3 py-2 text-xs;
+  }
+
+  /* Ocultar columnas menos importantes en mobile */
+  .hide-mobile {
+    display: none !important;
+  }
+}
+
+/* ─── PRINT STYLES ────────────────────────────────────────────────── */
+@media print {
+  .bg-billar { background: white !important; }
+  .bg-billar::before { display: none !important; }
+  header, footer, .no-print { display: none !important; }
+  .card, .card-flat { box-shadow: none !important; border: 1px solid #ddd !important; }
+  body { color: black !important; background: white !important; }
+}

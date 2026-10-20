@@ -1,0 +1,272 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── ENUMS ───────────────────────────────────────────────────────────────────
+
+enum Rol {
+  admin
+  juez
+  jugador
+  espectador
+}
+
+enum EstadoTorneo {
+  borrador
+  activo
+  finalizado
+}
+
+enum TipoFase {
+  grupos
+  clasificatorio
+  llaves
+  final
+}
+
+enum EstadoPartida {
+  pendiente
+  en_curso
+  finalizada
+}
+
+// ─── MODELOS ─────────────────────────────────────────────────────────────────
+
+model Usuario {
+  id            String    @id @default(uuid())
+  nombre        String
+  email         String    @unique
+  password_hash String
+  rol           Rol       @default(espectador)
+  activo        Boolean   @default(true)
+  created_at    DateTime  @default(now())
+
+  jugador       Jugador?  @relation(fields: [jugador_id], references: [id])
+  jugador_id    String?   @unique
+
+  partidas_como_juez Partida[] @relation("JuezPartida")
+}
+
+model Club {
+  id       String    @id @default(uuid())
+  nombre   String    @unique
+  ciudad   String?
+
+  jugadores Jugador[]
+}
+
+model Jugador {
+  id               String   @id @default(uuid())
+  nombre           String
+  apellido         String
+  nombre_completo  String   @unique  // calculado: nombre + apellido
+  alias            String?
+  cedula           String?  @unique
+  celular          String?
+  ciudad           String?
+  pais             String?  @default("Colombia")
+  club_ciudad      String   // texto libre para compatibilidad
+  categoria        String?
+  foto_url         String?
+  promedio_historico Float  @default(0)  // promedio acumulado de todos los torneos
+  activo           Boolean  @default(true)
+  created_at       DateTime @default(now())
+
+  club             Club?    @relation(fields: [club_id], references: [id])
+  club_id          String?
+
+  usuario          Usuario?
+
+  grupos           GrupoJugador[]
+  partidas_a       Partida[]      @relation("JugadorAPartida")
+  partidas_b       Partida[]      @relation("JugadorBPartida")
+  entradas         EntradaSet[]
+  rankings         Ranking[]
+  sets_ganados     Set[]          @relation("GanadorSet")
+  partidas_ganadas Partida[]      @relation("GanadorPartida")
+  bracket_slots    BracketSlot[]
+  inscripciones    InscripcionTorneo[]
+}
+
+model Torneo {
+  id           String       @id @default(uuid())
+  nombre       String
+  descripcion  String?
+  fecha_inicio DateTime
+  fecha_fin    DateTime
+  sede         String
+  estado       EstadoTorneo @default(borrador)
+  incremento   Float        @default(0)
+  meta_base    Int          @default(30)
+  modalidad    String       @default("local") // profesional | local | relampago
+  distancia_relampago String?                 // corto (8-10) | largo (15-18)
+  limite_entradas Int?
+  modo_libre   Boolean      @default(false)
+  total_sets_default Int    @default(1)
+  created_at   DateTime     @default(now())
+
+  fases         Fase[]
+  rankings      Ranking[]
+  inscripciones InscripcionTorneo[]
+}
+
+model InscripcionTorneo {
+  id          String   @id @default(uuid())
+  torneo      Torneo   @relation(fields: [torneo_id], references: [id], onDelete: Cascade)
+  torneo_id   String
+  jugador     Jugador  @relation(fields: [jugador_id], references: [id])
+  jugador_id  String
+  nivel       String   @default("segunda")
+  meta_puntos Int      @default(24)
+  pago_confirmado Boolean @default(false)
+  created_at  DateTime @default(now())
+
+  @@unique([torneo_id, jugador_id])
+}
+
+model Fase {
+  id        String   @id @default(uuid())
+  tipo      TipoFase
+  fecha     DateTime
+  orden     Int
+  clasificados_por_grupo Int @default(2)
+
+  torneo    Torneo   @relation(fields: [torneo_id], references: [id], onDelete: Cascade)
+  torneo_id String
+
+  grupos    Grupo[]
+  partidas  Partida[]
+  brackets  BracketSlot[]
+}
+
+model Grupo {
+  id      String  @id @default(uuid())
+  numero  Int
+  letra   String?
+
+  fase    Fase    @relation(fields: [fase_id], references: [id], onDelete: Cascade)
+  fase_id String
+
+  jugadores GrupoJugador[]
+  partidas  Partida[]
+}
+
+model GrupoJugador {
+  grupo      Grupo   @relation(fields: [grupo_id], references: [id], onDelete: Cascade)
+  grupo_id   String
+  jugador    Jugador @relation(fields: [jugador_id], references: [id])
+  jugador_id String
+
+  @@id([grupo_id, jugador_id])
+}
+
+model Partida {
+  id         String        @id @default(uuid())
+  fecha      DateTime?
+  hora       String?
+  estado     EstadoPartida @default(pendiente)
+  total_sets Int           @default(3)
+  meta_a     Int?          // meta de carambolas para jugador A (handicap)
+  meta_b     Int?          // meta de carambolas para jugador B (handicap)
+  jugador_salida_id String? // ID del jugador que ganó la salida
+  color_bola_a String?     @default("blanca")   // blanca | amarilla | azul
+  color_bola_b String?     @default("amarilla") // amarilla | blanca | azul
+  limite_entradas Int?     // límite de entradas por set (ej. 15, 20, 25, 30, 40, 50)
+  modo_libre   Boolean     @default(false)      // sin límite de entradas
+  created_at DateTime      @default(now())
+
+  fase      Fase    @relation(fields: [fase_id], references: [id])
+  fase_id   String
+
+  grupo     Grupo?  @relation(fields: [grupo_id], references: [id])
+  grupo_id  String?
+
+  jugador_a    Jugador @relation("JugadorAPartida", fields: [jugador_a_id], references: [id])
+  jugador_a_id String
+
+  jugador_b    Jugador @relation("JugadorBPartida", fields: [jugador_b_id], references: [id])
+  jugador_b_id String
+
+  juez         Usuario? @relation("JuezPartida", fields: [juez_id], references: [id])
+  juez_id      String?
+
+  ganador      Jugador? @relation("GanadorPartida", fields: [ganador_id], references: [id])
+  ganador_id   String?
+
+  confirmada   Boolean  @default(false)
+  bloqueada    Boolean  @default(false)
+
+  // Solicitud de reapertura/corrección por el juez
+  solicitud_reapertura Boolean @default(false)
+  motivo_reapertura    String?
+  audit_log            Json?   // Registro de eventos (creación, confirmación, solicitudes, reaperturas)
+
+  sets         Set[]
+}
+
+model Set {
+  id         String  @id @default(uuid())
+  numero     Int
+
+  partida    Partida @relation(fields: [partida_id], references: [id], onDelete: Cascade)
+  partida_id String
+
+  ganador    Jugador? @relation("GanadorSet", fields: [ganador_id], references: [id])
+  ganador_id String?
+
+  entradas   EntradaSet[]
+}
+
+model EntradaSet {
+  id             String  @id @default(uuid())
+  numero_entrada Int
+  carambolas     Int     @default(0)
+
+  set            Set     @relation(fields: [set_id], references: [id], onDelete: Cascade)
+  set_id         String
+
+  jugador        Jugador @relation(fields: [jugador_id], references: [id])
+  jugador_id     String
+}
+
+model Ranking {
+  id                  String  @id @default(uuid())
+  puntos              Float   @default(0)
+  sets_ganados        Int     @default(0)
+  sets_perdidos       Int     @default(0)
+  carambolas_total    Int     @default(0)
+  entradas_total      Int     @default(0)
+  promedio            Float   @default(0)
+  promedio_particular Float   @default(0) // mejor promedio en un solo partido
+  mayor_serie         Int     @default(0) // tacada máxima en una sola entrada
+  puntos_ranking      Float   @default(0)
+  posicion            Int     @default(0)
+
+  torneo    Torneo  @relation(fields: [torneo_id], references: [id], onDelete: Cascade)
+  torneo_id String
+
+  jugador   Jugador @relation(fields: [jugador_id], references: [id])
+  jugador_id String
+
+  @@unique([torneo_id, jugador_id])
+}
+
+model BracketSlot {
+  id        String  @id @default(uuid())
+  ronda     Int
+  posicion  Int
+  es_ajuste Boolean @default(false)
+
+  fase      Fase    @relation(fields: [fase_id], references: [id], onDelete: Cascade)
+  fase_id   String
+
+  jugador   Jugador? @relation(fields: [jugador_id], references: [id])
+  jugador_id String?
+
+  partida_id String?
+}
