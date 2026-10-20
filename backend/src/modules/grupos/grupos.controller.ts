@@ -89,7 +89,33 @@ export async function calcularTablaGrupo(req: Request, res: Response, next: Next
 
 export async function generarPartidasFase(req: Request, res: Response, next: NextFunction) {
   try {
-    res.json(await svc.generarPartidasFase(req.params.fase_id));
+    const faseId = req.params.fase_id || req.params.id;
+    res.json(await svc.generarPartidasFase(faseId));
+  } catch (err) { next(err); }
+}
+
+export async function generarPartidasAuto(req: Request, res: Response, next: NextFunction) {
+  try {
+    const id = req.params.id || req.params.fase_id;
+    // Intentar como grupo primero
+    try {
+      const resGrupo = await svc.generarPartidasGrupo(id);
+      return res.json(resGrupo);
+    } catch (eGrupo: any) {
+      // Si no es grupo o falla con 'Grupo no encontrado', intentar como fase
+      if (eGrupo?.message?.includes('Grupo no encontrado')) {
+        const resFase = await svc.generarPartidasFase(id);
+        return res.json(resFase);
+      }
+      throw eGrupo;
+    }
+  } catch (err) { next(err); }
+}
+
+export async function autoAsignarJuecesFase(req: Request, res: Response, next: NextFunction) {
+  try {
+    const faseId = req.params.fase_id || req.params.id;
+    res.json(await svc.autoAsignarJuecesFase(faseId));
   } catch (err) { next(err); }
 }
 

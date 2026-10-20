@@ -258,6 +258,13 @@ export async function sorteoAutomatico(fase_id: string, jugador_ids: string[], c
     }),
   ]);
 
+  // Autogenerar partidas inmediatamente tras el sorteo
+  try {
+    await generarPartidasFase(fase_id);
+  } catch (err) {
+    console.warn('Auto-generación de partidas tras sorteo omitida:', err);
+  }
+
   return listarGrupos(fase_id);
 }
 
@@ -269,6 +276,7 @@ export async function generarPartidasFase(fase_id: string) {
     include: {
       torneo: true,
       grupos: {
+        orderBy: { numero: 'asc' },
         include: { jugadores: { include: { jugador: true } } },
       },
     },
@@ -287,6 +295,13 @@ export async function generarPartidasFase(fase_id: string) {
     esModoLibre = true;
   }
 
+  // Obtener metas individuales de inscripciones si existen
+  const inscripciones = await prisma.inscripcionTorneo.findMany({
+    where: { torneo_id: fase.torneo_id },
+  });
+  const metaMap = new Map<string, number>();
+  inscripciones.forEach((i) => metaMap.set(i.jugador_id, i.meta_puntos));
+
   const partidasCreadas = [];
 
   for (const grupo of fase.grupos) {
@@ -301,8 +316,15 @@ export async function generarPartidasFase(fase_id: string) {
     if (existentes.length > 0) continue; // ya tiene partidas generadas
 
     // Round-robin (todos contra todos)
+    // Para grupos de 3:
+    // 0 vs 1 -> Partida 1 (Ronda inicial)
+    // 0 vs 2 -> Partida 2
+    // 1 vs 2 -> Partida 3
     for (let i = 0; i < jugadores.length; i++) {
       for (let j = i + 1; j < jugadores.length; j++) {
+        const metaA = metaMap.get(jugadores[i].id) ?? defaultMeta;
+        const metaB = metaMap.get(jugadores[j].id) ?? defaultMeta;
+
         const partida = await prisma.partida.create({
           data: {
             fase_id,
@@ -310,8 +332,8 @@ export async function generarPartidasFase(fase_id: string) {
             jugador_a_id: jugadores[i].id,
             jugador_b_id: jugadores[j].id,
             total_sets: totalSets,
-            meta_a: defaultMeta,
-            meta_b: defaultMeta,
+            meta_a: metaA,
+            meta_b: metaB,
             limite_entradas: esModoLibre ? null : fase.torneo.limite_entradas,
             modo_libre: esModoLibre,
             estado: 'pendiente',
@@ -326,6 +348,70 @@ export async function generarPartidasFase(fase_id: string) {
   }
 
   return { total_creadas: partidasCreadas.length, partidas: partidasCreadas };
+}
+
+// ─── AUTO-ASIGNAR JUECES / MESAS A LA PRIMERA RONDA DE LA FASE ───────────────
+
+export async function autoAsignarJuecesFase(fase_id: string) {
+  const fase = await prisma.fase.findUnique({
+    where: { id: fase_id },
+    include: {
+      grupos: {
+        orderBy: { numero: 'asc' },
+        include: {
+          partidas: {
+            where: { estado: 'pendiente' },
+            orderBy: { created_at: 'asc' },
+            include: { jugador_a: true, jugador_b: true },
+          },
+        },
+      },
+    },
+  });
+
+  if (!fase) throw new Error('Fase no encontrada');
+
+  const jueces = await prisma.usuario.findMany({
+    where: { rol: 'juez', activo: true },
+    orderBy: { nombre: 'asc' },
+  });
+
+  if (jueces.length === 0) {
+    throw new Error('No hay jueces oficiales registrados en el sistema');
+  }
+
+  const asignaciones = [];
+
+  // Asignar secuencialmente a la primera partida de cada grupo:
+  // Grupo 1, Partida 1 -> Juez Mesa 1
+  // Grupo 2, Partida 1 -> Juez Mesa 2
+  // Grupo 3, Partida 1 -> Juez Mesa 3
+  for (let i = 0; i < fase.grupos.length; i++) {
+    const grupo = fase.grupos[i];
+    const primeraPartida = grupo.partidas[0];
+    if (!primeraPartida) continue;
+
+    const juez = jueces[i % jueces.length];
+    const updated = await prisma.partida.update({
+      where: { id: primeraPartida.id },
+      data: { juez_id: juez.id },
+      include: {
+        jugador_a: true,
+        jugador_b: true,
+      },
+    });
+
+    asignaciones.push({
+      grupo_numero: grupo.numero,
+      partida_id: updated.id,
+      juez_id: juez.id,
+      juez_nombre: juez.nombre,
+      jugador_a: updated.jugador_a.nombre_completo,
+      jugador_b: updated.jugador_b.nombre_completo,
+    });
+  }
+
+  return { total_asignadas: asignaciones.length, asignaciones };
 }
 
 // ─── CLASIFICADOS Y TABLA GENERAL UNIFICADA (L. GENERAL) ─────────────────────
@@ -635,9 +721,18 @@ export async function generarPartidasGrupo(grupo_id: string) {
     esModoLibre = true;
   }
 
+  const inscripciones = await prisma.inscripcionTorneo.findMany({
+    where: { torneo_id: grupo.fase.torneo_id },
+  });
+  const metaMap = new Map<string, number>();
+  inscripciones.forEach((i) => metaMap.set(i.jugador_id, i.meta_puntos));
+
   const partidasCreadas = [];
   for (let i = 0; i < jugadores.length; i++) {
     for (let j = i + 1; j < jugadores.length; j++) {
+      const metaA = metaMap.get(jugadores[i].id) ?? defaultMeta;
+      const metaB = metaMap.get(jugadores[j].id) ?? defaultMeta;
+
       const partida = await prisma.partida.create({
         data: {
           fase_id: grupo.fase_id,
@@ -645,8 +740,8 @@ export async function generarPartidasGrupo(grupo_id: string) {
           jugador_a_id: jugadores[i].id,
           jugador_b_id: jugadores[j].id,
           total_sets: totalSets,
-          meta_a: defaultMeta,
-          meta_b: defaultMeta,
+          meta_a: metaA,
+          meta_b: metaB,
           limite_entradas: esModoLibre ? null : grupo.fase.torneo.limite_entradas,
           modo_libre: esModoLibre,
           estado: 'pendiente',

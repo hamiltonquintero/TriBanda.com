@@ -75,7 +75,10 @@ export async function listarPartidas(
       juez: { select: { id: true, nombre: true, email: true } },
       ganador: true, fase: true, grupo: true,
     },
-    orderBy: { created_at: 'desc' },
+    orderBy: [
+      { grupo: { numero: 'asc' } },
+      { created_at: 'asc' },
+    ],
   });
 }
 

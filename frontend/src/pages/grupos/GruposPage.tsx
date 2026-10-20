@@ -32,10 +32,29 @@ export default function GruposPage() {
   });
 
   const generarPartidas = useMutation({
-    mutationFn: () => api.post(`/grupos/${faseId}/generar-partidas`),
+    mutationFn: () => api.post(`/grupos/fase/${faseId}/generar-partidas`),
     onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ['grupos', faseId] });
-      alert(`Se generaron ${res.data.total_creadas} partidas automáticamente (todos contra todos).`);
+      qc.invalidateQueries({ queryKey: ['partidas'] });
+      alert(`⚡ ¡Listo! Se generaron ${res.data.total_creadas} partidas automáticamente.`);
+    },
+    onError: (err: any) => {
+      alert(err.response?.data?.error || 'Error al generar partidas');
+    },
+  });
+
+  const autoAsignarJueces = useMutation({
+    mutationFn: () => api.post(`/grupos/fase/${faseId}/auto-asignar-jueces`),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ['grupos', faseId] });
+      qc.invalidateQueries({ queryKey: ['partidas'] });
+      const lista = res.data.asignaciones
+        ?.map((a: any) => `• Grupo ${a.grupo_numero}: ${a.jugador_a} vs ${a.jugador_b} ➔ ${a.juez_nombre}`)
+        .join('\n') || '';
+      alert(`⚖️ ¡Mesas y Jueces Asignados!\nSe vincularon ${res.data.total_asignadas} mesas para la ronda inicial:\n${lista}`);
+    },
+    onError: (err: any) => {
+      alert(err.response?.data?.error || 'Error al auto-asignar jueces');
     },
   });
 
@@ -171,18 +190,39 @@ export default function GruposPage() {
           {hasRole('admin') && (
             <>
               <button
+                onClick={() => setSorteoOpen(true)}
+                className="btn-primary text-xs flex items-center gap-1 shadow-sm"
+              >
+                <span>🎲</span> Sorteo automático
+              </button>
+
+              <button
                 onClick={() => generarPartidas.mutate()}
                 disabled={generarPartidas.isPending}
-                className="btn-outline text-xs text-primary-700 border-primary-300"
-                title="Crea las partidas round-robin en todos los grupos que tengan jugadores"
+                className="btn-outline text-xs text-primary-700 border-primary-400 bg-primary-50/50 hover:bg-primary-100 flex items-center gap-1 font-semibold"
+                title="Genera automáticamente las partidas de todos los grupos"
               >
-                <span className="material-icons text-sm align-middle mr-1">auto_awesome</span>
-                {generarPartidas.isPending ? 'Generando...' : 'Auto-generar partidas'}
+                <span className="material-icons text-sm">auto_awesome</span>
+                {generarPartidas.isPending ? 'Generando...' : '⚡ Autogenerar Partidas'}
               </button>
-              <button onClick={() => crearGrupo.mutate(nextNumero)} disabled={crearGrupo.isPending} className="btn-secondary text-xs">
+
+              <button
+                onClick={() => autoAsignarJueces.mutate()}
+                disabled={autoAsignarJueces.isPending}
+                className="btn-secondary text-xs flex items-center gap-1"
+                title="Asigna automáticamente Juez Mesa 1 al Grupo 1, Juez Mesa 2 al Grupo 2, etc."
+              >
+                <span className="material-icons text-sm">balance</span>
+                {autoAsignarJueces.isPending ? 'Asignando...' : '⚖️ Auto-asignar Mesas / Jueces'}
+              </button>
+
+              <button
+                onClick={() => crearGrupo.mutate(nextNumero)}
+                disabled={crearGrupo.isPending}
+                className="btn-outline text-xs text-gray-700 border-gray-300 hover:bg-gray-50"
+              >
                 + Nuevo grupo
               </button>
-              <button onClick={() => setSorteoOpen(true)} className="btn-primary text-xs">🎲 Sorteo automático</button>
             </>
           )}
         </div>
@@ -411,10 +451,11 @@ function SorteoModal({ faseId, gruposExistentes, onClose, onSuccess }: {
         clasificados_por_grupo: clasificadosEstimados,
       });
 
-      // Generar automáticamente las partidas round robin
+      // Generar automáticamente las partidas round robin y auto-asignar jueces
       try {
-        await api.post(`/grupos/${faseId}/generar-partidas`);
-      } catch { /* si ya existen */ }
+        await api.post(`/grupos/fase/${faseId}/generar-partidas`);
+        await api.post(`/grupos/fase/${faseId}/auto-asignar-jueces`);
+      } catch { /* si ya existen o no hay jueces */ }
 
       // Limpiar borrador temporal guardado
       try {
