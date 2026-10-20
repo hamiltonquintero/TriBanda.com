@@ -4,6 +4,7 @@ import { useState } from 'react';
 import api from '../../services/api';
 import { Torneo, InscripcionTorneo, Jugador } from '../../types';
 import { useAuthStore } from '../../store/authStore';
+import GuiaInteractivaAdmin from '../../components/GuiaInteractivaAdmin';
 
 const estadoSiguiente: Record<string, string> = { borrador: 'activo', activo: 'finalizado' };
 const estadoLabel: Record<string, string> = { borrador: 'Activar torneo', activo: 'Finalizar torneo' };
@@ -241,86 +242,17 @@ export default function DetalleTorneoPage() {
         </div>
       </div>
 
-      {/* Flujo Oficial del Torneo */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
-        <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
-          <span className="material-icons text-primary-600 text-sm">alt_route</span>
-          Flujo de Organización TriBanda (Paso a Paso)
-        </h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          {/* Paso 1 */}
-          <div className={`p-3 rounded-xl border ${inscripciones.length > 0 ? 'bg-emerald-50/60 border-emerald-200' : 'bg-gray-50 border-gray-200'}`}>
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs font-bold text-gray-700">1. Inscribir Jugadores</span>
-              <span className={`text-[11px] px-2 py-0.5 rounded-full font-bold ${inscripciones.length > 0 ? 'bg-emerald-200 text-emerald-900' : 'bg-amber-100 text-amber-800'}`}>
-                {inscripciones.length > 0 ? `✓ ${inscripciones.length} listos` : 'Pendiente'}
-              </span>
-            </div>
-            <p className="text-[11px] text-gray-500">
-              Inscribe manualmente o sube el Excel con los jugadores.
-            </p>
-            {inscripciones.length === 0 && hasRole('admin') && (
-              <button
-                onClick={() => setModalInscribir(true)}
-                className="mt-2 text-xs text-primary-700 font-bold hover:underline inline-block"
-              >
-                + Inscribir ahora →
-              </button>
-            )}
-          </div>
-
-          {/* Paso 2 */}
-          <div className="p-3 rounded-xl border bg-gray-50 border-gray-200">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs font-bold text-gray-700">2. Sorteo de Grupos</span>
-              <span className="text-[11px] text-gray-400 font-medium">🎲 Automático</span>
-            </div>
-            <p className="text-[11px] text-gray-500">
-              Reparte los jugadores aleatoriamente en los grupos.
-            </p>
-            <Link
-              to={`/torneos/${id}/grupos`}
-              className="mt-2 inline-block text-xs text-primary-700 font-bold hover:underline"
-            >
-              Ir a Grupos y Sorteo →
-            </Link>
-          </div>
-
-          {/* Paso 3 */}
-          <div className="p-3 rounded-xl border bg-gray-50 border-gray-200">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs font-bold text-gray-700">3. Generar Partidas</span>
-              <span className="text-[11px] text-gray-400 font-medium">⚡ Triangular</span>
-            </div>
-            <p className="text-[11px] text-gray-500">
-              Crea los cruces (1 vs 2, perdedor vs 3, ganador vs 3).
-            </p>
-            <Link
-              to={`/torneos/${id}/grupos`}
-              className="mt-2 inline-block text-xs text-primary-700 font-bold hover:underline"
-            >
-              Autogenerar Partidas →
-            </Link>
-          </div>
-
-          {/* Paso 4 */}
-          <div className="p-3 rounded-xl border bg-gray-50 border-gray-200">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs font-bold text-gray-700">4. Asignar Mesas / Jueces</span>
-              <span className="text-[11px] text-gray-400 font-medium">⚖️ Mesa 1 = Juez 1</span>
-            </div>
-            <p className="text-[11px] text-gray-500">
-              Vincula las mesas para que el juez anote desde su tablet en vivo.
-            </p>
-            <Link
-              to={`/torneos/${id}/partidas`}
-              className="mt-2 inline-block text-xs text-primary-700 font-bold hover:underline"
-            >
-              Asignar Mesas y Jueces →
-            </Link>
-          </div>
-        </div>
-      </div>
+      {/* Guía Interactiva Asistida Paso a Paso */}
+      {hasRole('admin') && (
+        <GuiaInteractivaAdmin
+          torneo={torneo}
+          inscripciones={inscripciones}
+          onOpenInscribir={() => {
+            setSeleccionadosLote([]);
+            setModalInscribir(true);
+          }}
+        />
+      )}
 
       {/* Accesos rápidos */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
