@@ -12,10 +12,26 @@ async function calcularGanadorSet(set_id: string): Promise<string | null> {
   });
   if (!set) return null;
 
-  const { jugador_a_id, jugador_b_id } = set.partida;
+  const { jugador_a_id, jugador_b_id, meta_a, meta_b } = set.partida;
   const sumaA = set.entradas.filter((e) => e.jugador_id === jugador_a_id).reduce((acc, e) => acc + e.carambolas, 0);
   const sumaB = set.entradas.filter((e) => e.jugador_id === jugador_b_id).reduce((acc, e) => acc + e.carambolas, 0);
-  const ganador_id = sumaA >= sumaB ? jugador_a_id : jugador_b_id;
+
+  let ganador_id: string;
+  if (meta_a && meta_b) {
+    const alcanzoA = sumaA >= meta_a;
+    const alcanzoB = sumaB >= meta_b;
+    if (alcanzoA && !alcanzoB) {
+      ganador_id = jugador_a_id;
+    } else if (alcanzoB && !alcanzoA) {
+      ganador_id = jugador_b_id;
+    } else {
+      const pctA = sumaA / meta_a;
+      const pctB = sumaB / meta_b;
+      ganador_id = pctA >= pctB ? jugador_a_id : jugador_b_id;
+    }
+  } else {
+    ganador_id = sumaA >= sumaB ? jugador_a_id : jugador_b_id;
+  }
 
   await prisma.set.update({ where: { id: set_id }, data: { ganador_id } });
   return ganador_id;
@@ -239,7 +255,8 @@ export async function registrarEntrada(
   if (existB) await prisma.entradaSet.update({ where: { id: existB.id }, data: { carambolas: data.carambolas_b } });
   else await prisma.entradaSet.create({ data: { set_id: set.id, jugador_id: partida.jugador_b_id, numero_entrada: data.numero_entrada, carambolas: data.carambolas_b } });
 
-  if (data.numero_entrada === 13) {
+  const limiteEntradas = partida.modo_libre ? null : (partida.limite_entradas ?? null);
+  if (limiteEntradas && data.numero_entrada >= limiteEntradas) {
     await calcularGanadorSet(set.id);
     await calcularGanadorPartida(partida_id);
   }
@@ -320,8 +337,10 @@ export async function cambioTurno(partida_id: string, set_numero: number) {
   const nextA = entradasA.length + 1;
   const nextB = entradasB.length + 1;
 
-  if (nextA > 13 && nextB > 13) {
-    // Set completo — calcular ganador
+  const limiteEntradas = partida.modo_libre ? null : (partida.limite_entradas ?? null);
+
+  if (limiteEntradas && nextA > limiteEntradas && nextB > limiteEntradas) {
+    // Set completo por límite de entradas — calcular ganador
     await calcularGanadorSet(set.id);
     await calcularGanadorPartida(partida_id);
     return obtenerMarcador(partida_id);
@@ -329,17 +348,19 @@ export async function cambioTurno(partida_id: string, set_numero: number) {
 
   // Crear nueva entrada con 0 carambolas para ambos jugadores
   const creates = [];
-  if (nextA <= 13) {
+  if (!limiteEntradas || nextA <= limiteEntradas) {
     creates.push(prisma.entradaSet.create({
       data: { set_id: set.id, jugador_id: partida.jugador_a_id, numero_entrada: nextA, carambolas: 0 },
     }));
   }
-  if (nextB <= 13) {
+  if (!limiteEntradas || nextB <= limiteEntradas) {
     creates.push(prisma.entradaSet.create({
       data: { set_id: set.id, jugador_id: partida.jugador_b_id, numero_entrada: nextB, carambolas: 0 },
     }));
   }
-  await prisma.$transaction(creates);
+  if (creates.length > 0) {
+    await prisma.$transaction(creates);
+  }
 
   return obtenerMarcador(partida_id);
 }

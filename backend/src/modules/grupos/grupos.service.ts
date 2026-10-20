@@ -248,8 +248,11 @@ export async function sorteoAutomatico(fase_id: string, jugador_ids: string[], c
     if (jids.length > 6) throw new Error(`El grupo quedaría con más de 6 jugadores`);
   }
 
-  // Limpiar y reasignar en transacción
+  // Limpiar y reasignar en transacción (incluyendo partidas pendientes previas)
   await prisma.$transaction([
+    prisma.partida.deleteMany({
+      where: { fase_id, grupo_id: { not: null }, estado: 'pendiente' },
+    }),
     prisma.grupoJugador.deleteMany({ where: { grupo: { fase_id } } }),
     prisma.grupoJugador.createMany({
       data: Object.entries(asignaciones).flatMap(([grupo_id, jids]) =>

@@ -374,12 +374,21 @@ export default function DetalleTorneoPage() {
                     {new Date(f.fecha).toLocaleDateString('es-CO')}
                   </span>
                 </div>
-                <Link
-                  to={`/torneos/${id}/fases/${f.id}/grupos`}
-                  className="text-xs text-primary-600 hover:underline font-semibold"
-                >
-                  Ver Grupos →
-                </Link>
+                {f.tipo === 'grupos' || f.tipo === 'clasificatorio' ? (
+                  <Link
+                    to={`/torneos/${id}/fases/${f.id}/grupos`}
+                    className="text-xs text-primary-600 hover:underline font-semibold"
+                  >
+                    Ver Grupos →
+                  </Link>
+                ) : (
+                  <Link
+                    to={`/torneos/${id}/bracket`}
+                    className="text-xs text-primary-600 hover:underline font-semibold"
+                  >
+                    Ver Bracket / Llaves →
+                  </Link>
+                )}
               </li>
             ))}
           </ol>

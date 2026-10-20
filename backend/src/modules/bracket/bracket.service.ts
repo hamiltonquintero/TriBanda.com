@@ -276,8 +276,9 @@ export async function obtenerBracket(fase_id: string) {
   let campeon = null;
   let subcampeon = null;
 
-  if (finalSlots && finalSlots.length >= 2 && finalSlots[0].partida_id) {
-    const partidaFinal = partidaMap.get(finalSlots[0].partida_id!);
+  const partidaFinalId = finalSlots?.[0]?.partida_id || finalSlots?.[1]?.partida_id;
+  if (partidaFinalId) {
+    const partidaFinal = partidaMap.get(partidaFinalId);
     if (partidaFinal?.ganador) {
       campeon = partidaFinal.ganador;
       subcampeon =

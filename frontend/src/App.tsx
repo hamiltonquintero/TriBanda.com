@@ -48,6 +48,7 @@ export default function App() {
       <Route path="/torneos/:id/bracket" element={<Layout><BracketPage /></Layout>} />
       <Route path="/publico" element={<PublicHomePage />} />
       <Route path="/publico/torneos/:id" element={<PublicTorneoPage />} />
+      <Route path="/torneo/:id" element={<PublicTorneoPage />} />
       <Route path="/publico/jugador/:id" element={
         <Layout><JugadorDetallePage /></Layout>
       } />
