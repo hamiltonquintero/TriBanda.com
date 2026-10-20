@@ -2,27 +2,22 @@ import prisma from '../../config/prisma';
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 
-function mayorPotenciaDe2MenorOIgual(n: number): number {
-  let p = 1;
-  while (p * 2 <= n) p *= 2;
-  return p < 2 ? 2 : p;
-}
-
 function nombreRonda(ronda: number, esAjuste?: boolean): string {
   if (esAjuste || ronda === 99) return 'Ronda de Ajuste';
   const nombres: Record<number, string> = {
-    2: 'Final',
+    2: 'Gran Final',
     4: 'Semifinales',
     8: 'Cuartos de Final',
     16: 'Octavos de Final',
-    32: 'Dieciseisavos',
+    32: 'Dieciseisavos (R32)',
     64: 'Treintaidosavos',
   };
   return nombres[ronda] ?? `Ronda de ${ronda}`;
 }
 
 // Genera el orden de siembra estándar para un bracket de tamaño n (potencia de 2)
-function buildSeedOrder(n: number): number[] {
+// Ej. n=32: [1, 32, 16, 17, 9, 24, 8, 25, 5, 28, 12, 21, 13, 20, 4, 29, 3, 30, 14, 19, 11, 22, 6, 27, 7, 26, 10, 23, 15, 18, 2, 31]
+export function buildSeedOrder(n: number): number[] {
   if (n === 1) return [1];
   const prev = buildSeedOrder(n / 2);
   const result: number[] = [];
@@ -33,7 +28,7 @@ function buildSeedOrder(n: number): number[] {
   return result;
 }
 
-// ─── GENERAR BRACKET CON RONDA DE AJUSTE (Lógica del Cliente) ────────────────
+// ─── GENERAR BRACKET BILATERAL (Formato Oficial Playoffs 32) ──────────────────
 
 export async function generarBracket(fase_id: string, jugador_ids: string[], tamano_manual?: number) {
   const fase = await prisma.fase.findUnique({
@@ -42,76 +37,32 @@ export async function generarBracket(fase_id: string, jugador_ids: string[], tam
   });
   if (!fase) throw new Error('Fase no encontrada');
 
-  // Eliminar bracket previo si existe
-  await prisma.bracketSlot.deleteMany({ where: { fase_id } });
-
   const N = jugador_ids.length;
   if (N < 2) throw new Error('Se requieren al menos 2 jugadores para generar el bracket');
 
-  // 1. Determinar potencia objetivo
+  // 1. Eliminar llaves y partidas previas de esta fase
+  await prisma.bracketSlot.deleteMany({ where: { fase_id } });
+  await prisma.partida.deleteMany({ where: { fase_id, grupo_id: null } });
+
+  // 2. Determinar tamaño de cuadro P (32, 16, 8, 4)
   let P: number;
   if (tamano_manual && [4, 8, 16, 32, 64].includes(tamano_manual)) {
     P = tamano_manual;
-    if (N > P * 2) {
-      jugador_ids = jugador_ids.slice(0, P * 2);
-    }
   } else {
-    P = mayorPotenciaDe2MenorOIgual(N);
+    // Si N <= 8 usar 8; si N <= 16 usar 16; por defecto para el formato Playoffs usar 32
+    P = N <= 8 ? 8 : N <= 16 ? 16 : 32;
   }
 
-  const sobrantes = N > P ? N - P : 0;
-  const jueganAjuste = sobrantes * 2;
-  const pasanDirecto = N - jueganAjuste;
+  // Si N > P, truncar a los primeros P jugadores según el ranking
+  const clasificados = jugador_ids.slice(0, P);
+  const numJugadores = clasificados.length;
 
-  // 2. Si hay sobrantes, crear la Ronda de Ajuste (ronda 99)
-  if (sobrantes > 0) {
-    const participantesAjuste = jugador_ids.slice(pasanDirecto);
-
-    for (let i = 0; i < sobrantes; i++) {
-      const jA_id = participantesAjuste[i];
-      const jB_id = participantesAjuste[participantesAjuste.length - 1 - i];
-
-      // Crear partida de ajuste
-      const partidaAjuste = await prisma.partida.create({
-        data: {
-          fase_id,
-          jugador_a_id: jA_id,
-          jugador_b_id: jB_id,
-          total_sets: 3,
-          estado: 'pendiente',
-          sets: {
-            create: [{ numero: 1 }, { numero: 2 }, { numero: 3 }],
-          },
-        },
-      });
-
-      // Crear slots para este cruce de ajuste
-      await prisma.bracketSlot.createMany({
-        data: [
-          {
-            fase_id,
-            ronda: 99,
-            posicion: i * 2 + 1,
-            es_ajuste: true,
-            jugador_id: jA_id,
-            partida_id: partidaAjuste.id,
-          },
-          {
-            fase_id,
-            ronda: 99,
-            posicion: i * 2 + 2,
-            es_ajuste: true,
-            jugador_id: jB_id,
-            partida_id: partidaAjuste.id,
-          },
-        ],
-      });
-    }
-  }
-
-  // 3. Crear el Cuadro Principal de tamaño P (Ronda de P)
+  // Semillas oficiales para cuadro de tamaño P
   const semillasP = buildSeedOrder(P);
-  const slotsPrincipal: {
+
+  // 3. Crear todos los slots: P, P/2, P/4, ..., 2
+  // Cada ronda r tiene exactamente r slots
+  const todosLosSlots: {
     fase_id: string;
     ronda: number;
     posicion: number;
@@ -119,11 +70,11 @@ export async function generarBracket(fase_id: string, jugador_ids: string[], tam
     es_ajuste: boolean;
   }[] = [];
 
+  // Ronda P (Ronda inicial)
   for (let i = 0; i < P; i++) {
     const semilla = semillasP[i];
-    // Si la semilla <= pasanDirecto, tiene clasificado directo
-    const jugador_id = semilla <= pasanDirecto ? jugador_ids[semilla - 1] : null;
-    slotsPrincipal.push({
+    const jugador_id = semilla <= numJugadores ? clasificados[semilla - 1] : null;
+    todosLosSlots.push({
       fase_id,
       ronda: P,
       posicion: i + 1,
@@ -132,59 +83,108 @@ export async function generarBracket(fase_id: string, jugador_ids: string[], tam
     });
   }
 
-  // Crear slots de rondas siguientes hacia la final (P/2 ... 2)
-  let ronda = Math.floor(P / 2);
-  while (ronda >= 1) {
-    const numSlots = ronda * 2;
-    for (let i = 0; i < numSlots; i++) {
-      slotsPrincipal.push({
+  // Rondas siguientes: P/2 down to 2 (Gran Final)
+  let r = Math.floor(P / 2);
+  while (r >= 2) {
+    for (let pos = 1; pos <= r; pos++) {
+      todosLosSlots.push({
         fase_id,
-        ronda,
-        posicion: i + 1,
+        ronda: r,
+        posicion: pos,
         jugador_id: null,
         es_ajuste: false,
       });
     }
-    ronda = Math.floor(ronda / 2);
+    r = Math.floor(r / 2);
   }
 
-  await prisma.bracketSlot.createMany({
-    data: slotsPrincipal,
+  await prisma.bracketSlot.createMany({ data: todosLosSlots });
+
+  // 4. Traer los slots creados para procesar cruces y pases directos (BYEs)
+  const slotsCreados = await prisma.bracketSlot.findMany({
+    where: { fase_id },
+    orderBy: [{ ronda: 'desc' }, { posicion: 'asc' }],
   });
 
-  // 4. Para los cruces de Ronda de P donde AMBOS jugadores ya se conocen, crear la partida de una vez
-  const slotsRondaP = await prisma.bracketSlot.findMany({
-    where: { fase_id, ronda: P, es_ajuste: false },
-    orderBy: { posicion: 'asc' },
-  });
+  const slotsMap = new Map<string, typeof slotsCreados[0]>();
+  for (const s of slotsCreados) {
+    slotsMap.set(`${s.ronda}_${s.posicion}`, s);
+  }
 
-  for (let i = 0; i < slotsRondaP.length; i += 2) {
-    const slotA = slotsRondaP[i];
-    const slotB = slotsRondaP[i + 1];
+  // 5. Procesar Ronda P: Partidas vs Pases Directos (BYEs)
+  const numCrucesP = P / 2;
+  for (let m = 0; m < numCrucesP; m++) {
+    const posA = 2 * m + 1;
+    const posB = 2 * m + 2;
+    const slotA = slotsMap.get(`${P}_${posA}`);
+    const slotB = slotsMap.get(`${P}_${posB}`);
 
-    if (slotA?.jugador_id && slotB?.jugador_id) {
-      const partidaRondaP = await prisma.partida.create({
+    const jA = slotA?.jugador_id;
+    const jB = slotB?.jugador_id;
+    const posDestino = m + 1;
+    const rondaDestino = P / 2;
+
+    if (jA && jB) {
+      // Ambos clasificados -> Se crea la partida en Ronda P
+      const partida = await prisma.partida.create({
         data: {
           fase_id,
-          jugador_a_id: slotA.jugador_id,
-          jugador_b_id: slotB.jugador_id,
+          jugador_a_id: jA,
+          jugador_b_id: jB,
           total_sets: 3,
           estado: 'pendiente',
-          sets: {
-            create: [{ numero: 1 }, { numero: 2 }, { numero: 3 }],
-          },
+          sets: { create: [{ numero: 1 }, { numero: 2 }, { numero: 3 }] },
         },
       });
-
-      await prisma.bracketSlot.update({
-        where: { id: slotA.id },
-        data: { partida_id: partidaRondaP.id },
-      });
-      await prisma.bracketSlot.update({
-        where: { id: slotB.id },
-        data: { partida_id: partidaRondaP.id },
-      });
+      await prisma.bracketSlot.update({ where: { id: slotA!.id }, data: { partida_id: partida.id } });
+      await prisma.bracketSlot.update({ where: { id: slotB!.id }, data: { partida_id: partida.id } });
+      slotA!.partida_id = partida.id;
+      slotB!.partida_id = partida.id;
+    } else if (jA && !jB) {
+      // Slot A tiene PASE DIRECTO (BYE) -> Avanza directo a Ronda P/2
+      const slotDestino = slotsMap.get(`${rondaDestino}_${posDestino}`);
+      if (slotDestino) {
+        await prisma.bracketSlot.update({ where: { id: slotDestino.id }, data: { jugador_id: jA } });
+        slotDestino.jugador_id = jA;
+      }
+    } else if (!jA && jB) {
+      // Slot B tiene PASE DIRECTO (BYE) -> Avanza directo a Ronda P/2
+      const slotDestino = slotsMap.get(`${rondaDestino}_${posDestino}`);
+      if (slotDestino) {
+        await prisma.bracketSlot.update({ where: { id: slotDestino.id }, data: { jugador_id: jB } });
+        slotDestino.jugador_id = jB;
+      }
     }
+  }
+
+  // 6. Revisar si en rondas siguientes ya hay cruces donde AMBOS jugadores avanzaron por BYE
+  let curR = P / 2;
+  while (curR >= 2) {
+    const numCruces = curR / 2;
+    for (let m = 0; m < numCruces; m++) {
+      const posA = 2 * m + 1;
+      const posB = 2 * m + 2;
+      const slotA = slotsMap.get(`${curR}_${posA}`);
+      const slotB = slotsMap.get(`${curR}_${posB}`);
+
+      if (slotA?.jugador_id && slotB?.jugador_id && !slotA.partida_id && !slotB.partida_id) {
+        const partida = await prisma.partida.create({
+          data: {
+            fase_id,
+            jugador_a_id: slotA.jugador_id,
+            jugador_b_id: slotB.jugador_id,
+            total_sets: 3,
+            estado: 'pendiente',
+            sets: { create: [{ numero: 1 }, { numero: 2 }, { numero: 3 }] },
+          },
+        });
+        await prisma.bracketSlot.update({ where: { id: slotA.id }, data: { partida_id: partida.id } });
+        await prisma.bracketSlot.update({ where: { id: slotB.id }, data: { partida_id: partida.id } });
+        slotA.partida_id = partida.id;
+        slotB.partida_id = partida.id;
+      }
+    }
+    curR = Math.floor(curR / 2);
   }
 
   return obtenerBracket(fase_id);
@@ -201,7 +201,10 @@ export async function obtenerBracket(fase_id: string) {
     orderBy: [{ ronda: 'desc' }, { posicion: 'asc' }],
   });
 
-  if (slots.length === 0) return { fase_id, rondas: [], campeon: null, subcampeon: null };
+  if (slots.length === 0) return { fase_id, rondas: [], campeon: null, subcampeon: null, tamano: 0 };
+
+  const maxRonda = slots[0].ronda; // P (ej. 32 o 16)
+  const semillasMaxP = buildSeedOrder(maxRonda);
 
   // Obtener partidas asociadas
   const partidaIds = Array.from(new Set(slots.map((s) => s.partida_id).filter(Boolean))) as string[];
@@ -230,18 +233,26 @@ export async function obtenerBracket(fase_id: string) {
     .sort(([a], [b]) => b - a)
     .map(([numero, rondaSlots]) => {
       const cruces: {
-        slot_a: (typeof slots)[0] & { partida?: (typeof partidas)[0] };
-        slot_b: (typeof slots)[0] & { partida?: (typeof partidas)[0] };
+        slot_a: (typeof slots)[0] & { partida?: (typeof partidas)[0]; semilla?: number };
+        slot_b: (typeof slots)[0] & { partida?: (typeof partidas)[0]; semilla?: number };
       }[] = [];
 
       for (let i = 0; i < rondaSlots.length; i += 2) {
+        const semillaA = numero === maxRonda ? semillasMaxP[rondaSlots[i].posicion - 1] : undefined;
+        const semillaB =
+          numero === maxRonda && rondaSlots[i + 1]
+            ? semillasMaxP[rondaSlots[i + 1].posicion - 1]
+            : undefined;
+
         const slot_a = {
           ...rondaSlots[i],
+          semilla: semillaA,
           partida: rondaSlots[i].partida_id ? partidaMap.get(rondaSlots[i].partida_id!) : undefined,
         };
         const slot_b = rondaSlots[i + 1]
           ? {
               ...rondaSlots[i + 1],
+              semilla: semillaB,
               partida: rondaSlots[i + 1].partida_id
                 ? partidaMap.get(rondaSlots[i + 1].partida_id!)
                 : undefined,
@@ -260,7 +271,7 @@ export async function obtenerBracket(fase_id: string) {
       };
     });
 
-  // Determinar campeón y subcampeón de la final (ronda 2, posición 1 y 2)
+  // Determinar campeón y subcampeón de la final (ronda 2)
   const finalSlots = rondasMap.get(2);
   let campeon = null;
   let subcampeon = null;
@@ -276,10 +287,10 @@ export async function obtenerBracket(fase_id: string) {
     }
   }
 
-  return { fase_id, rondas, campeon, subcampeon };
+  return { fase_id, tamano: maxRonda, rondas, campeon, subcampeon };
 }
 
-// ─── AVANZAR GANADOR (Ajuste o Cuadro Principal) ─────────────────────────────
+// ─── AVANZAR GANADOR EN BRACKET ───────────────────────────────────────────────
 
 export async function avanzarGanador(partida_id: string) {
   const partida = await prisma.partida.findUnique({
@@ -294,128 +305,66 @@ export async function avanzarGanador(partida_id: string) {
   });
   if (!slotActual) return; // No es una partida de bracket
 
-  // CASO 1: PARTIDA DE RONDA DE AJUSTE (ronda 99)
-  if (slotActual.es_ajuste || slotActual.ronda === 99) {
-    // Número de cruce de ajuste: 0, 1, 2, ...
-    const matchIndex = Math.floor((slotActual.posicion - 1) / 2);
+  const rondaActual = slotActual.ronda;
+  if (rondaActual <= 2) return; // Ya es la final
 
-    // Obtener los slots del cuadro principal (Ronda P)
-    const todosSlots = await prisma.bracketSlot.findMany({
-      where: { fase_id: partida.fase_id, es_ajuste: false },
-      orderBy: [{ ronda: 'desc' }, { posicion: 'asc' }],
-    });
-    if (todosSlots.length === 0) return;
+  // Ronda y posición destino:
+  // En cualquier cuadro binario, el cruce m (posiciones 2m-1 y 2m) produce el ganador
+  // que pasa a la posición m de la ronda siguiente
+  const rondaSiguiente = Math.floor(rondaActual / 2);
+  const posicionDestino = Math.ceil(slotActual.posicion / 2);
 
-    const maxRondaP = todosSlots[0].ronda; // P
-    const slotsP = todosSlots.filter((s) => s.ronda === maxRondaP);
-    const semillasP = buildSeedOrder(maxRondaP);
-
-    // Los ganadores de ajuste van a los cupos vacíos correspondientes:
-    // Semilla P - matchIndex (ej. semilla 16, 15, 14, 13...)
-    const semillaObjetivo = maxRondaP - matchIndex;
-    const indexEnRondaP = semillasP.indexOf(semillaObjetivo);
-
-    if (indexEnRondaP !== -1 && slotsP[indexEnRondaP]) {
-      const slotDestino = slotsP[indexEnRondaP];
-      await prisma.bracketSlot.update({
-        where: { id: slotDestino.id },
-        data: { jugador_id: partida.ganador_id },
-      });
-
-      // Verificar si su rival en Ronda P ya está listo para crear la partida
-      const esPosImpar = slotDestino.posicion % 2 === 1;
-      const posRival = esPosImpar ? slotDestino.posicion + 1 : slotDestino.posicion - 1;
-      const slotRival = slotsP.find((s) => s.posicion === posRival);
-
-      if (slotRival?.jugador_id) {
-        const jA = esPosImpar ? partida.ganador_id : slotRival.jugador_id;
-        const jB = esPosImpar ? slotRival.jugador_id : partida.ganador_id;
-
-        const nuevaPartida = await prisma.partida.create({
-          data: {
-            fase_id: partida.fase_id,
-            jugador_a_id: jA,
-            jugador_b_id: jB,
-            total_sets: 3,
-            estado: 'pendiente',
-            sets: {
-              create: [{ numero: 1 }, { numero: 2 }, { numero: 3 }],
-            },
-          },
-        });
-
-        await prisma.bracketSlot.update({
-          where: { id: slotDestino.id },
-          data: { partida_id: nuevaPartida.id },
-        });
-        await prisma.bracketSlot.update({
-          where: { id: slotRival.id },
-          data: { partida_id: nuevaPartida.id },
-        });
-      }
-    }
-    return;
-  }
-
-  // CASO 2: PARTIDA DEL CUADRO PRINCIPAL (Ronda P, P/2, ..., 2)
-  const rondaSiguiente = Math.floor(slotActual.ronda / 2);
-  if (rondaSiguiente < 1) return; // Ya es la final
-
-  const posicionSiguiente = Math.ceil(slotActual.posicion / 2);
-  const esPosicionA = slotActual.posicion % 2 === 1;
-  const posSlotSiguiente = esPosicionA ? posicionSiguiente * 2 - 1 : posicionSiguiente * 2;
-
-  // Actualizar slot siguiente con el ganador
   const slotDestino = await prisma.bracketSlot.findFirst({
     where: {
       fase_id: partida.fase_id,
       ronda: rondaSiguiente,
-      posicion: posSlotSiguiente,
+      posicion: posicionDestino,
     },
   });
 
-  if (slotDestino) {
-    await prisma.bracketSlot.update({
-      where: { id: slotDestino.id },
-      data: { jugador_id: partida.ganador_id },
-    });
+  if (!slotDestino) return;
 
-    // Verificar si el rival del siguiente cruce ya está esperando
-    const posRival = esPosicionA ? posSlotSiguiente + 1 : posSlotSiguiente - 1;
-    const slotRival = await prisma.bracketSlot.findFirst({
-      where: {
+  // Actualizar jugador en slot destino
+  await prisma.bracketSlot.update({
+    where: { id: slotDestino.id },
+    data: { jugador_id: partida.ganador_id },
+  });
+
+  // Verificar si su rival en la siguiente ronda ya está definido
+  const esImpar = posicionDestino % 2 === 1;
+  const posRival = esImpar ? posicionDestino + 1 : posicionDestino - 1;
+
+  const slotRival = await prisma.bracketSlot.findFirst({
+    where: {
+      fase_id: partida.fase_id,
+      ronda: rondaSiguiente,
+      posicion: posRival,
+    },
+  });
+
+  if (slotRival?.jugador_id && !slotDestino.partida_id && !slotRival.partida_id) {
+    const jA = esImpar ? partida.ganador_id : slotRival.jugador_id;
+    const jB = esImpar ? slotRival.jugador_id : partida.ganador_id;
+
+    const nuevaPartida = await prisma.partida.create({
+      data: {
         fase_id: partida.fase_id,
-        ronda: rondaSiguiente,
-        posicion: posRival,
+        jugador_a_id: jA,
+        jugador_b_id: jB,
+        total_sets: 3,
+        estado: 'pendiente',
+        sets: { create: [{ numero: 1 }, { numero: 2 }, { numero: 3 }] },
       },
     });
 
-    if (slotRival?.jugador_id && !slotDestino.partida_id) {
-      const jA = esPosicionA ? partida.ganador_id : slotRival.jugador_id;
-      const jB = esPosicionA ? slotRival.jugador_id : partida.ganador_id;
-
-      const nuevaPartida = await prisma.partida.create({
-        data: {
-          fase_id: partida.fase_id,
-          jugador_a_id: jA,
-          jugador_b_id: jB,
-          total_sets: 3,
-          estado: 'pendiente',
-          sets: {
-            create: [{ numero: 1 }, { numero: 2 }, { numero: 3 }],
-          },
-        },
-      });
-
-      await prisma.bracketSlot.update({
-        where: { id: slotDestino.id },
-        data: { partida_id: nuevaPartida.id },
-      });
-      await prisma.bracketSlot.update({
-        where: { id: slotRival.id },
-        data: { partida_id: nuevaPartida.id },
-      });
-    }
+    await prisma.bracketSlot.update({
+      where: { id: slotDestino.id },
+      data: { partida_id: nuevaPartida.id },
+    });
+    await prisma.bracketSlot.update({
+      where: { id: slotRival.id },
+      data: { partida_id: nuevaPartida.id },
+    });
   }
 }
 

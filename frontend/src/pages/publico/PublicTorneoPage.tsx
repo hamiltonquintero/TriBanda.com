@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { useState } from 'react';
 import api from '../../services/api';
 import { Torneo, RankingItem, BracketData, Partida, Grupo } from '../../types';
+import BilateralBracketView from '../bracket/BilateralBracketView';
 
 export default function PublicTorneoPage() {
   const { id } = useParams<{ id: string }>();
@@ -241,65 +242,14 @@ export default function PublicTorneoPage() {
         )}
 
         {tab === 'bracket' && (
-          <div className="bg-white rounded-xl shadow-xl p-5">
-            <h2 className="font-heading font-bold text-lg mb-3">Llaves de Eliminación Directa</h2>
+          <div className="space-y-4">
             {!bracket?.rondas?.length ? (
-              <p className="text-gray-400 text-sm">Sin cuadro generado aún.</p>
-            ) : (
-              <div className="overflow-x-auto pb-4">
-                <div className="flex gap-4 min-w-max">
-                  {bracket.rondas.map((ronda) => {
-                    const esAjuste = ronda.es_ajuste || ronda.numero === 99;
-                    return (
-                      <div
-                        key={ronda.numero}
-                        className={`w-64 flex-shrink-0 ${
-                          esAjuste ? 'bg-amber-50/70 p-3 rounded-xl border border-dashed border-amber-300' : ''
-                        }`}
-                      >
-                        <div className="text-center mb-2">
-                          {esAjuste && (
-                            <span className="badge-amber text-[9px] font-bold px-1.5 py-0.5 rounded-full inline-block mb-0.5">
-                              PLAY-IN
-                            </span>
-                          )}
-                          <h3 className={`font-bold text-xs uppercase tracking-wide ${esAjuste ? 'text-amber-900' : 'text-primary-700'}`}>
-                            {ronda.nombre}
-                          </h3>
-                        </div>
-                        <div className="space-y-2">
-                          {ronda.cruces.map((cruce, i) => {
-                            const jA = cruce.slot_a?.jugador;
-                            const jB = cruce.slot_b?.jugador;
-                            const partida = cruce.slot_a?.partida ?? cruce.slot_b?.partida;
-                            const ganadorId = partida?.ganador_id;
-
-                            return (
-                              <div key={i} className="bg-white rounded-lg p-2 text-xs border border-gray-200 shadow-sm">
-                                <p className={`py-1 px-2 rounded truncate ${
-                                  ganadorId && ganadorId === jA?.id
-                                    ? 'bg-green-100 font-bold text-green-950'
-                                    : jA ? 'text-gray-900 font-medium' : 'text-gray-300 italic'
-                                }`}>
-                                  {jA?.nombre_completo ?? (esAjuste ? 'Por Definir' : 'Esperando Ajuste')}
-                                </p>
-                                <p className="text-gray-300 text-center text-[10px] my-0.5">vs</p>
-                                <p className={`py-1 px-2 rounded truncate ${
-                                  ganadorId && ganadorId === jB?.id
-                                    ? 'bg-green-100 font-bold text-green-950'
-                                    : jB ? 'text-gray-900 font-medium' : 'text-gray-300 italic'
-                                }`}>
-                                  {jB?.nombre_completo ?? (esAjuste ? 'Por Definir' : 'Esperando Ajuste')}
-                                </p>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+              <div className="bg-white rounded-xl shadow-xl p-8 text-center text-gray-400">
+                <span className="material-icons text-5xl text-gray-300 block mb-2">account_tree</span>
+                El cuadro de llaves aún no ha sido publicado.
               </div>
+            ) : (
+              <BilateralBracketView bracket={bracket} torneoNombre={torneo?.nombre} isPublic={true} />
             )}
           </div>
         )}

@@ -270,6 +270,7 @@ export interface BracketSlotItem {
   ronda?: number;
   posicion?: number;
   es_ajuste?: boolean;
+  semilla?: number;
   jugador_id?: string | null;
   jugador?: Jugador | null;
   partida_id?: string | null;
@@ -290,6 +291,7 @@ export interface BracketRonda {
 
 export interface BracketData {
   fase_id?: string;
+  tamano?: number;
   rondas: BracketRonda[];
   campeon?: Jugador | null;
   subcampeon?: Jugador | null;
