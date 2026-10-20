@@ -45,21 +45,25 @@ export default function JugadoresPage() {
 
     const filasHtml = jugadores
       .map(
-        (j, idx) => `
-        <tr>
-          <td style="text-align: center; font-weight: bold;">${idx + 1}</td>
-          <td>${j.cedula || '-'}</td>
-          <td><strong>${j.nombre_completo}</strong></td>
-          <td style="color: #4b5563;">${j.alias ? `"${j.alias}"` : '-'}</td>
-          <td>${j.club?.nombre ?? j.club_ciudad}</td>
-          <td>${j.ciudad || '-'}</td>
-          <td style="text-align: center; font-weight: bold; color: #166534;">
-            ${j.promedio_historico ? j.promedio_historico.toFixed(3) : '0.000'}
-          </td>
-          <td style="text-align: center;">${j.celular || '-'}</td>
-          <td style="text-align: center;">${j.activo ? 'Activo' : 'Inactivo'}</td>
-        </tr>
-      `
+        (j, idx) => {
+          let handicap = '3';
+          if (j.categoria?.includes('1') || (j.promedio_historico ?? 0) >= 0.8) handicap = '1';
+          else if (j.categoria?.includes('2') || (j.promedio_historico ?? 0) >= 0.5) handicap = '2';
+
+          return `
+          <tr>
+            <td style="text-align: center; font-weight: bold;">${idx + 1}</td>
+            <td><strong>${j.nombre_completo}</strong></td>
+            <td style="text-align: center; font-weight: bold; color: #166534;">${handicap}</td>
+            <td style="color: #4b5563;">${j.alias ? `"${j.alias}"` : '-'}</td>
+            <td>${j.cedula || '-'}</td>
+            <td>${j.club?.nombre ?? j.club_ciudad}</td>
+            <td>${j.ciudad || (j.club?.ciudad ?? '-')}</td>
+            <td style="text-align: center;">${j.celular || '-'}</td>
+            <td style="text-align: center;">${j.activo ? 'Activo' : 'Inactivo'}</td>
+          </tr>
+        `;
+        }
       )
       .join('');
 
@@ -95,15 +99,15 @@ export default function JugadoresPage() {
           <table>
             <thead>
               <tr>
-                <th style="width: 30px; text-align: center;">#</th>
-                <th>Cédula</th>
-                <th>Nombre Completo</th>
-                <th>Alias</th>
-                <th>Club / Ciudad</th>
-                <th>Ciudad</th>
-                <th style="text-align: center;">Promedio</th>
-                <th style="text-align: center;">Celular</th>
-                <th style="text-align: center;">Estado</th>
+                <th style="width: 35px; text-align: center;">ID</th>
+                <th>NOMBRE Y APELLIDO</th>
+                <th style="width: 65px; text-align: center;">HANDICAP</th>
+                <th>APODO</th>
+                <th>CÉDULA</th>
+                <th>CLUB</th>
+                <th>CIUDAD / SEDE</th>
+                <th style="text-align: center;">CELULAR</th>
+                <th style="text-align: center;">ESTADO</th>
               </tr>
             </thead>
             <tbody>
@@ -240,36 +244,40 @@ export default function JugadoresPage() {
         </div>
       )}
 
-      {/* VISTA 1: TABLA COMPACTA (Pantallazo 6 del Cliente) */}
+      {/* VISTA 1: TABLA COMPACTA (Orden Oficial del Torneo) */}
       {!isLoading && jugadores.length > 0 && vista === 'tabla' && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-x-auto">
           <table className="table-billar text-xs">
             <thead>
-              <tr>
-                <th className="w-10 text-center">#</th>
-                <th>Nombre Completo</th>
-                <th>Club / Sede</th>
-                <th>Cédula</th>
-                <th>Celular</th>
-                <th className="text-center">Prom. Histórico</th>
-                <th className="text-center">Categoría</th>
-                <th className="text-center">Estado</th>
-                {hasRole('admin') && <th className="text-center w-28">Acciones</th>}
+              <tr className="bg-gray-100/80">
+                <th className="w-10 text-center font-bold">ID</th>
+                <th className="font-bold">NOMBRE Y APELLIDO</th>
+                <th className="text-center font-bold">HANDICAP</th>
+                <th className="font-bold">APODO</th>
+                <th className="font-bold">CÉDULA</th>
+                <th className="font-bold">CLUB</th>
+                <th className="font-bold">CIUDAD / SEDE</th>
+                <th className="font-bold">CELULAR</th>
+                <th className="text-center font-bold">ESTADO</th>
+                {hasRole('admin') && <th className="text-center w-24 font-bold">ACCIONES</th>}
               </tr>
             </thead>
             <tbody>
               {jugadores.map((j, idx) => {
                 const promedio = j.promedio_historico ?? 0;
-                let categoriaBadge = { label: 'Tercera', color: 'badge-amber' };
-                if (promedio >= 0.8) {
-                  categoriaBadge = { label: 'Primera', color: 'badge-green' };
-                } else if (promedio >= 0.5) {
-                  categoriaBadge = { label: 'Segunda', color: 'badge-blue' };
+                let handicap = '3';
+                let categoriaBadge = { label: 'Tercera (H3)', color: 'badge-amber', num: '3' };
+                if (j.categoria?.includes('1') || promedio >= 0.8) {
+                  categoriaBadge = { label: 'Primera (H1)', color: 'badge-green', num: '1' };
+                  handicap = '1';
+                } else if (j.categoria?.includes('2') || promedio >= 0.5) {
+                  categoriaBadge = { label: 'Segunda (H2)', color: 'badge-blue', num: '2' };
+                  handicap = '2';
                 }
 
                 return (
                   <tr key={j.id} className="hover:bg-gray-50 transition">
-                    <td className="text-center font-bold text-gray-400">{idx + 1}</td>
+                    <td className="text-center font-bold text-gray-400 font-mono">{idx + 1}</td>
                     <td>
                       <div className="flex items-center gap-2">
                         {j.foto_url ? (
@@ -286,25 +294,25 @@ export default function JugadoresPage() {
                         <div className="min-w-0">
                           <Link
                             to={`/publico/jugador/${j.id}`}
-                            className="font-semibold text-gray-900 hover:text-primary-600 block truncate"
+                            className="font-bold text-gray-900 hover:text-primary-600 block truncate"
                           >
                             {j.nombre_completo}
                           </Link>
-                          {j.alias && <span className="text-gray-400 italic text-[11px] block truncate">"{j.alias}"</span>}
                         </div>
                       </div>
                     </td>
-                    <td className="text-gray-600">{j.club?.nombre ?? j.club_ciudad}</td>
-                    <td className="text-gray-500 font-mono text-[11px]">{j.cedula || '-'}</td>
-                    <td className="text-gray-500 font-mono text-[11px]">{j.celular || '-'}</td>
-                    <td className="text-center font-bold font-mono text-primary-700">
-                      {promedio.toFixed(3)}
-                    </td>
                     <td className="text-center">
-                      <span className={`${categoriaBadge.color} text-[10px] px-2 py-0.5`}>
-                        {categoriaBadge.label}
+                      <span className={`${categoriaBadge.color} text-[11px] font-bold px-2.5 py-0.5 rounded-md`}>
+                        {handicap}
                       </span>
                     </td>
+                    <td className="text-gray-700 font-medium">
+                      {j.alias ? <span className="italic font-semibold text-primary-900">"{j.alias}"</span> : '-'}
+                    </td>
+                    <td className="text-gray-600 font-mono text-[11px] font-semibold">{j.cedula || '-'}</td>
+                    <td className="text-gray-800 font-medium">{j.club?.nombre ?? j.club_ciudad}</td>
+                    <td className="text-gray-600 font-medium">{j.ciudad || (j.club?.ciudad ?? '-')}</td>
+                    <td className="text-gray-600 font-mono text-[11px]">{j.celular || '-'}</td>
                     <td className="text-center">
                       <span
                         className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${

@@ -35,56 +35,61 @@ export default function ModalImportarExcel({ isOpen, onClose, onSuccess }: Props
 
   if (!isOpen) return null;
 
-  // 1. Descargar plantilla oficial en formato .xlsx
+  // 1. Descargar plantilla oficial en formato .xlsx con el orden exacto del torneo
   function descargarPlantilla() {
     const filasEjemplo = [
       {
-        'Nombre': 'Pedro',
-        'Apellido': 'González',
-        'Alias / Apodo': 'El Mago',
-        'Cédula / Documento': '1085234567',
-        'Club / Ciudad': 'Club Billar Bogotá',
-        'Celular': '3001234567',
-        'Promedio Histórico': 0.850,
-        'Categoría': 'Primera',
-        'Ciudad': 'Bogotá',
+        'ID': 1,
+        'NOMBRE Y APELLIDO': 'JORGE CUMBAL',
+        'HANDICAP': 1,
+        'APODO': '',
+        'CEDULA': '1085908256',
+        'CLUB': 'TEAM GUANCHA',
+        'CIUDAD / SEDE': 'IPIALES',
+        'CELULAR': '3104741683',
       },
       {
-        'Nombre': 'Carlos',
-        'Apellido': 'Mendoza',
-        'Alias / Apodo': 'El Zurdo',
-        'Cédula / Documento': '98765432',
-        'Club / Ciudad': 'Club Cali Master',
-        'Celular': '3109876543',
-        'Promedio Histórico': 0.620,
-        'Categoría': 'Segunda',
-        'Ciudad': 'Cali',
+        'ID': 2,
+        'NOMBRE Y APELLIDO': 'GEOVANNY QUIÑONEZ',
+        'HANDICAP': 1,
+        'APODO': '',
+        'CEDULA': '1085908257',
+        'CLUB': 'DIAMANTE',
+        'CIUDAD / SEDE': 'PASTO',
+        'CELULAR': '3104741684',
       },
       {
-        'Nombre': 'Juan',
-        'Apellido': 'Pérez',
-        'Alias / Apodo': '',
-        'Cédula / Documento': '1122334455',
-        'Club / Ciudad': 'Team Nariño',
-        'Celular': '3155555555',
-        'Promedio Histórico': 0.450,
-        'Categoría': 'Tercera',
-        'Ciudad': 'Pasto',
+        'ID': 3,
+        'NOMBRE Y APELLIDO': 'NICOLAS ZAMORA',
+        'HANDICAP': 2,
+        'APODO': 'NICOTINA',
+        'CEDULA': '1085908263',
+        'CLUB': 'OFICINA',
+        'CIUDAD / SEDE': 'IPIALES',
+        'CELULAR': '3104741690',
+      },
+      {
+        'ID': 4,
+        'NOMBRE Y APELLIDO': 'RICADO IGUARNIA',
+        'HANDICAP': 2,
+        'APODO': 'GATO',
+        'CEDULA': '1085908264',
+        'CLUB': 'FAIR PLAY',
+        'CIUDAD / SEDE': 'IPIALES',
+        'CELULAR': '3104741693',
       },
     ];
 
     const ws = XLSX.utils.json_to_sheet(filasEjemplo);
-    // Ancho de columnas
     ws['!cols'] = [
-      { wch: 16 }, // Nombre
-      { wch: 16 }, // Apellido
-      { wch: 18 }, // Alias
-      { wch: 20 }, // Cédula
-      { wch: 24 }, // Club
-      { wch: 16 }, // Celular
-      { wch: 20 }, // Promedio
-      { wch: 14 }, // Categoría
-      { wch: 14 }, // Ciudad
+      { wch: 8 },  // ID
+      { wch: 28 }, // NOMBRE Y APELLIDO
+      { wch: 14 }, // HANDICAP
+      { wch: 16 }, // APODO
+      { wch: 18 }, // CEDULA
+      { wch: 22 }, // CLUB
+      { wch: 18 }, // CIUDAD / SEDE
+      { wch: 16 }, // CELULAR
     ];
 
     const wb = XLSX.utils.book_new();
@@ -136,13 +141,15 @@ export default function ModalImportarExcel({ isOpen, onClose, onSuccess }: Props
           }
 
           // Detectar Nombre y Apellido
-          let nombre =
-            mapaFila['nombre'] ||
-            mapaFila['nombres'] ||
+          let nombreCompleto =
+            mapaFila['nombreyapellido'] ||
+            mapaFila['nombresyapellidos'] ||
             mapaFila['nombrecompleto'] ||
             mapaFila['jugador'] ||
             mapaFila['atleta'] ||
             mapaFila['player'] ||
+            mapaFila['nombre'] ||
+            mapaFila['nombres'] ||
             '';
 
           let apellido =
@@ -151,7 +158,9 @@ export default function ModalImportarExcel({ isOpen, onClose, onSuccess }: Props
             mapaFila['primerapellido'] ||
             '';
 
-          // Si vino todo en "nombre" o "jugador" y no hay apellido, separar
+          let nombre = nombreCompleto;
+
+          // Si vino todo en "nombre" o "nombre y apellido" y no hay apellido separado, separar
           if (!apellido && nombre.includes(' ')) {
             const partes = nombre.split(/\s+/);
             nombre = partes[0];
@@ -160,10 +169,41 @@ export default function ModalImportarExcel({ isOpen, onClose, onSuccess }: Props
 
           if (!nombre) continue; // Omitir filas sin nombre
 
-          // Alias
+          // Handicap y Categoría
+          const rawHandicap =
+            mapaFila['handicap'] ||
+            mapaFila['categoria'] ||
+            mapaFila['cat'] ||
+            mapaFila['nivel'] ||
+            '';
+
+          let categoria = 'Tercera';
+          let promedio_historico = 0.450;
+
+          if (rawHandicap === '1' || rawHandicap.toLowerCase().includes('primer') || rawHandicap.toLowerCase() === 'primera') {
+            categoria = 'Primera';
+            promedio_historico = 0.850;
+          } else if (rawHandicap === '2' || rawHandicap.toLowerCase().includes('segund') || rawHandicap.toLowerCase() === 'segunda') {
+            categoria = 'Segunda';
+            promedio_historico = 0.600;
+          } else if (rawHandicap === '3' || rawHandicap.toLowerCase().includes('tercer') || rawHandicap.toLowerCase() === 'tercera') {
+            categoria = 'Tercera';
+            promedio_historico = 0.450;
+          } else if (parseFloat(rawHandicap) > 0) {
+            const num = parseFloat(rawHandicap.replace(',', '.'));
+            if (num < 1) {
+              promedio_historico = num;
+              categoria = num >= 0.8 ? 'Primera' : num >= 0.5 ? 'Segunda' : 'Tercera';
+            } else {
+              categoria = num === 1 ? 'Primera' : num === 2 ? 'Segunda' : `Handicap ${num}`;
+              promedio_historico = num === 1 ? 0.85 : num === 2 ? 0.6 : 0.45;
+            }
+          }
+
+          // Alias / Apodo
           const alias =
-            mapaFila['alias'] ||
             mapaFila['apodo'] ||
+            mapaFila['alias'] ||
             mapaFila['sobrenombre'] ||
             mapaFila['nickname'] ||
             undefined;
@@ -178,13 +218,17 @@ export default function ModalImportarExcel({ isOpen, onClose, onSuccess }: Props
             mapaFila['dni'] ||
             undefined;
 
-          // Club / Ciudad
-          const club_ciudad =
-            mapaFila['clubciudad'] ||
-            mapaFila['club'] ||
+          // Club y Ciudad / Sede (reconoce cuando hay dos columnas CLUB como en el Excel del usuario: CLUB y CLUB_1)
+          const clubNombre = mapaFila['club'] || mapaFila['sede'] || mapaFila['equipo'] || 'Sin Club';
+          const ciudad =
+            mapaFila['ciudadsede'] ||
+            mapaFila['ciudad'] ||
             mapaFila['sede'] ||
-            mapaFila['equipo'] ||
-            'Club Principal';
+            mapaFila['club1'] || // si hay dos columnas CLUB en el Excel
+            mapaFila['municipio'] ||
+            undefined;
+
+          const club_ciudad = ciudad ? `${clubNombre} (${ciudad})` : clubNombre;
 
           // Celular
           const celular =
@@ -193,32 +237,6 @@ export default function ModalImportarExcel({ isOpen, onClose, onSuccess }: Props
             mapaFila['whatsapp'] ||
             mapaFila['movil'] ||
             undefined;
-
-          // Ciudad
-          const ciudad = mapaFila['ciudad'] || mapaFila['municipio'] || undefined;
-
-          // Promedio
-          const rawProm =
-            mapaFila['promediohistorico'] ||
-            mapaFila['promedio'] ||
-            mapaFila['avg'] ||
-            mapaFila['handicap'] ||
-            mapaFila['prom'] ||
-            '0';
-          const promedio_historico = parseFloat(rawProm.replace(',', '.')) || 0;
-
-          // Categoría
-          let categoria =
-            mapaFila['categoria'] ||
-            mapaFila['cat'] ||
-            mapaFila['nivel'] ||
-            undefined;
-
-          if (!categoria && promedio_historico > 0) {
-            if (promedio_historico >= 0.8) categoria = 'Primera';
-            else if (promedio_historico >= 0.5) categoria = 'Segunda';
-            else categoria = 'Tercera';
-          }
 
           procesados.push({
             nombre,
