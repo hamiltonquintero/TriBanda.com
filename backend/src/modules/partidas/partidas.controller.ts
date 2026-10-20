@@ -35,10 +35,11 @@ export async function crearPartida(req: Request, res: Response, next: NextFuncti
   } catch (err) { next(err); }
 }
 
-export async function iniciarPartida(req: Request, res: Response, next: NextFunction) {
+export async function iniciarPartida(req: AuthRequest, res: Response, next: NextFunction) {
   try {
     const data = req.body && Object.keys(req.body).length > 0 ? req.body : undefined;
-    res.json(await svc.iniciarPartida(req.params.id, data));
+    const juez_id = req.user?.rol === 'juez' ? req.user.id : undefined;
+    res.json(await svc.iniciarPartida(req.params.id, data, juez_id));
   } catch (err) { next(err); }
 }
 
@@ -113,5 +114,12 @@ export async function listarSolicitudesCorreccion(req: Request, res: Response, n
   try {
     const { torneo_id } = req.query as { torneo_id?: string };
     res.json(await svc.listarSolicitudesCorreccion(torneo_id));
+  } catch (err) { next(err); }
+}
+
+export async function asignarJuez(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const { juez_id } = req.body as { juez_id?: string | null };
+    res.json(await svc.asignarJuez(req.params.id, juez_id));
   } catch (err) { next(err); }
 }

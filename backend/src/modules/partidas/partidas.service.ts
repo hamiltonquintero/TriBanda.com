@@ -146,7 +146,8 @@ export async function iniciarPartida(
     meta_b?: number;
     limite_entradas?: number | null;
     modo_libre?: boolean;
-  }
+  },
+  juez_id?: string
 ) {
   const partida = await prisma.partida.findUnique({ where: { id } });
   if (!partida) throw new Error('Partida no encontrada');
@@ -157,6 +158,9 @@ export async function iniciarPartida(
   }));
 
   const updateData: any = { estado: 'en_curso' };
+  if (!partida.juez_id && juez_id) {
+    updateData.juez_id = juez_id;
+  }
   if (opciones) {
     if (opciones.jugador_salida_id !== undefined) updateData.jugador_salida_id = opciones.jugador_salida_id || null;
     if (opciones.color_bola_a !== undefined) updateData.color_bola_a = opciones.color_bola_a;
@@ -620,3 +624,16 @@ export async function historialJugador(jugador_id: string, torneo_id?: string) {
     orderBy: { created_at: 'desc' },
   });
 }
+
+// ─── ASIGNAR JUEZ A PARTIDA ──────────────────────────────────────────────────
+
+export async function asignarJuez(partida_id: string, juez_id?: string | null) {
+  return prisma.partida.update({
+    where: { id: partida_id },
+    data: { juez_id: juez_id || null },
+    include: {
+      juez: { select: { id: true, nombre: true, email: true } },
+    },
+  });
+}
+

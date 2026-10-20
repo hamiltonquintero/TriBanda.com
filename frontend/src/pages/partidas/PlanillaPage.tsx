@@ -41,6 +41,22 @@ export default function PlanillaPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['planilla', id] }),
   });
 
+  const { data: jueces = [] } = useQuery<{ id: string; nombre: string; email: string }[]>({
+    queryKey: ['jueces-oficiales'],
+    queryFn: () => api.get('/auth/usuarios?rol=juez').then((r) => (Array.isArray(r.data) ? r.data : [])),
+    enabled: hasRole('admin'),
+  });
+
+  const asignarJuez = useMutation({
+    mutationFn: (juez_id: string | null) => api.patch(`/partidas/${id}/asignar-juez`, { juez_id }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['planilla', id] });
+    },
+    onError: (err: any) => {
+      alert(err.response?.data?.error || 'Error al asignar juez');
+    },
+  });
+
   const puedeEditar =
     planilla?.estado === 'en_curso' &&
     !planilla.confirmada &&
@@ -141,8 +157,27 @@ export default function PlanillaPage() {
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-4 text-xs text-gray-500 mt-3 pt-2 border-t border-gray-100">
-              <span><strong>Juez:</strong> {encabezado.juez?.nombre ?? 'Sin juez asignado'}</span>
+            <div className="flex flex-wrap items-center gap-4 text-xs text-gray-600 mt-3 pt-2 border-t border-gray-100">
+              <div className="flex items-center gap-1.5">
+                <strong>Juez:</strong>
+                {hasRole('admin') ? (
+                  <select
+                    value={encabezado.juez?.id || ''}
+                    onChange={(e) => asignarJuez.mutate(e.target.value || null)}
+                    className="text-xs bg-gray-50 border border-gray-300 rounded px-2 py-0.5 font-medium text-gray-800 hover:border-primary-500"
+                    title="Asignar o cambiar juez oficial de esta partida"
+                  >
+                    <option value="">— Sin juez asignado —</option>
+                    {jueces.map((j) => (
+                      <option key={j.id} value={j.id}>
+                        ⚖️ {j.nombre}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <span>{encabezado.juez?.nombre ?? 'Sin juez asignado'}</span>
+                )}
+              </div>
               <span><strong>Fecha:</strong> {encabezado.fecha ? new Date(encabezado.fecha).toLocaleDateString('es-CO') : 'Sin fecha'}</span>
             </div>
           </div>
