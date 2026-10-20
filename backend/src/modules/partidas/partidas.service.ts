@@ -149,6 +149,8 @@ export async function iniciarPartida(
     meta_b?: number;
     limite_entradas?: number | null;
     modo_libre?: boolean;
+    juez_id?: string | null;
+    juez_nombre?: string | null;
   },
   juez_id?: string
 ) {
@@ -161,9 +163,30 @@ export async function iniciarPartida(
   }));
 
   const updateData: any = { estado: 'en_curso' };
-  if (!partida.juez_id && juez_id) {
+
+  if (opciones?.juez_id) {
+    updateData.juez_id = opciones.juez_id;
+  } else if (opciones?.juez_nombre && opciones.juez_nombre.trim()) {
+    const nombreTrim = opciones.juez_nombre.trim();
+    let juezUsuario = await prisma.usuario.findFirst({
+      where: { nombre: { equals: nombreTrim, mode: 'insensitive' } },
+    });
+    if (!juezUsuario) {
+      const emailRandom = `juez.${Date.now()}@billar.com`;
+      juezUsuario = await prisma.usuario.create({
+        data: {
+          nombre: nombreTrim,
+          email: emailRandom,
+          password_hash: '$2b$10$wK1Vq9Zq6YjMekJqjR0dIe4uK6f5C5UvG/QhZq6YjMekJqjR0dIe4',
+          rol: 'juez',
+        },
+      });
+    }
+    updateData.juez_id = juezUsuario.id;
+  } else if (!partida.juez_id && juez_id) {
     updateData.juez_id = juez_id;
   }
+
   if (opciones) {
     if (opciones.jugador_salida_id !== undefined) updateData.jugador_salida_id = opciones.jugador_salida_id || null;
     if (opciones.color_bola_a !== undefined) updateData.color_bola_a = opciones.color_bola_a;
@@ -365,6 +388,7 @@ export async function obtenerMarcador(id: string) {
     modo_libre: partida.modo_libre,
     jugador_a: partida.jugador_a,
     jugador_b: partida.jugador_b,
+    juez: partida.juez,
     ganador: partida.ganador,
     sets,
     resumen: {
@@ -630,10 +654,31 @@ export async function historialJugador(jugador_id: string, torneo_id?: string) {
 
 // ─── ASIGNAR JUEZ A PARTIDA ──────────────────────────────────────────────────
 
-export async function asignarJuez(partida_id: string, juez_id?: string | null) {
+export async function asignarJuez(partida_id: string, juez_id?: string | null, juez_nombre?: string | null) {
+  let targetJuezId = juez_id || null;
+
+  if (!targetJuezId && juez_nombre && juez_nombre.trim()) {
+    const nombreTrim = juez_nombre.trim();
+    let juezUsuario = await prisma.usuario.findFirst({
+      where: { nombre: { equals: nombreTrim, mode: 'insensitive' } },
+    });
+    if (!juezUsuario) {
+      const emailRandom = `juez.${Date.now()}@billar.com`;
+      juezUsuario = await prisma.usuario.create({
+        data: {
+          nombre: nombreTrim,
+          email: emailRandom,
+          password_hash: '$2b$10$wK1Vq9Zq6YjMekJqjR0dIe4uK6f5C5UvG/QhZq6YjMekJqjR0dIe4',
+          rol: 'juez',
+        },
+      });
+    }
+    targetJuezId = juezUsuario.id;
+  }
+
   return prisma.partida.update({
     where: { id: partida_id },
-    data: { juez_id: juez_id || null },
+    data: { juez_id: targetJuezId },
     include: {
       juez: { select: { id: true, nombre: true, email: true } },
     },

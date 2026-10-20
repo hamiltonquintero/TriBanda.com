@@ -12,7 +12,7 @@ router.get('/perfil', authGuard, ctrl.perfil);
 router.put('/password', authGuard, ctrl.cambiarPassword);
 
 // Solo admin
-router.get('/usuarios', authGuard, roleGuard('admin'), ctrl.listarUsuarios);
+router.get('/usuarios', authGuard, roleGuard('admin', 'juez'), ctrl.listarUsuarios);
 router.post('/usuarios', authGuard, roleGuard('admin'), ctrl.crearUsuario);
 router.put('/usuarios/:id', authGuard, roleGuard('admin'), ctrl.actualizarUsuario);
 

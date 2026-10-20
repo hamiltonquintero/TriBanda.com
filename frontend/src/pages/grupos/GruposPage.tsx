@@ -3,7 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import api from '../../services/api';
 import { useAuthStore } from '../../store/authStore';
-import { Grupo, FilaTabla, Jugador, InfoClasificados } from '../../types';
+import { Grupo, FilaTabla, InfoClasificados, InscripcionTorneo } from '../../types';
 
 export default function GruposPage() {
   const { torneoId, faseId } = useParams<{ torneoId: string; faseId: string }>();
@@ -389,6 +389,7 @@ export default function GruposPage() {
       {sorteoOpen && (
         <SorteoModal
           faseId={faseId!}
+          torneoId={torneoId!}
           gruposExistentes={grupos?.length ?? 0}
           onClose={() => setSorteoOpen(false)}
           onSuccess={() => {
@@ -402,41 +403,113 @@ export default function GruposPage() {
   );
 }
 
-// ─── MODAL DE SORTEO CON BUSCADOR ───────────────────────────────────────────
+// ─── MODAL DE SORTEO CON JUGADORES INSCRITOS DEL TORNEO ──────────────────────
 
-function SorteoModal({ faseId, gruposExistentes, onClose, onSuccess }: {
-  faseId: string; gruposExistentes: number; onClose: () => void; onSuccess: () => void;
+function SorteoModal({
+  faseId,
+  torneoId,
+  gruposExistentes,
+  onClose,
+  onSuccess,
+}: {
+  faseId: string;
+  torneoId: string;
+  gruposExistentes: number;
+  onClose: () => void;
+  onSuccess: () => void;
 }) {
   const [buscar, setBuscar] = useState('');
-  const [participantes, setParticipantes] = useState<Jugador[]>(() => {
-    try {
-      const guardados = localStorage.getItem(`sorteo_participantes_${faseId}`);
-      return guardados ? JSON.parse(guardados) : [];
-    } catch {
-      return [];
-    }
-  });
+  const [filtroPago, setFiltroPago] = useState<'todos' | 'pagados' | 'pendientes'>('todos');
   const [jugadoresPorGrupo, setJugadoresPorGrupo] = useState<number>(3);
 
-  // Guardar participantes progresivamente
-  useEffect(() => {
-    try {
-      localStorage.setItem(`sorteo_participantes_${faseId}`, JSON.stringify(participantes));
-    } catch { /* noop */ }
-  }, [participantes, faseId]);
-
-  const { data: jugadores = [] } = useQuery<Jugador[]>({
-    queryKey: ['jugadores-activos', buscar],
-    queryFn: () => api.get('/jugadores', { params: { activo: true, buscar: buscar || undefined } }).then((r) => r.data),
+  // Obtener SOLO los jugadores inscritos en este torneo
+  const { data: inscripciones = [], isLoading } = useQuery<InscripcionTorneo[]>({
+    queryKey: ['inscripciones-torneo', torneoId],
+    queryFn: () => api.get(`/inscripciones/${torneoId}`).then((r) => r.data),
   });
 
-  // Regla UMB: En grupos de 3 clasifican 2 (los dos mejores). En grupos de 4 clasifican 2.
+  // Conjunto de IDs seleccionados (por defecto todos los inscritos)
+  const [seleccionadosIds, setSeleccionadosIds] = useState<Set<string>>(() => {
+    try {
+      const guardados = localStorage.getItem(`sorteo_ids_${faseId}`);
+      if (guardados) return new Set(JSON.parse(guardados));
+    } catch { /* noop */ }
+    return new Set();
+  });
+
+  // Inicializar con todos los inscritos si no hay selección guardada previamente
+  useEffect(() => {
+    if (inscripciones.length > 0 && seleccionadosIds.size === 0) {
+      const guardados = localStorage.getItem(`sorteo_ids_${faseId}`);
+      if (!guardados) {
+        setSeleccionadosIds(new Set(inscripciones.map((i) => i.jugador_id)));
+      }
+    }
+  }, [inscripciones, faseId]);
+
+  // Guardar selección progresivamente
+  useEffect(() => {
+    try {
+      localStorage.setItem(`sorteo_ids_${faseId}`, JSON.stringify(Array.from(seleccionadosIds)));
+    } catch { /* noop */ }
+  }, [seleccionadosIds, faseId]);
+
+  const toggleJugador = (id: string) => {
+    setSeleccionadosIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const chulearTodos = () => {
+    setSeleccionadosIds(new Set(inscripciones.map((i) => i.jugador_id)));
+  };
+
+  const chulearSoloPagados = () => {
+    const pagados = inscripciones.filter((i) => i.pago_confirmado).map((i) => i.jugador_id);
+    setSeleccionadosIds(new Set(pagados));
+  };
+
+  const desmarcarTodos = () => {
+    setSeleccionadosIds(new Set());
+  };
+
+  // Filtrado de inscripciones para la lista visual
+  const inscripcionesFiltradas = inscripciones.filter((ins) => {
+    if (filtroPago === 'pagados' && !ins.pago_confirmado) return false;
+    if (filtroPago === 'pendientes' && ins.pago_confirmado) return false;
+
+    if (!buscar.trim()) return true;
+    const q = buscar.toLowerCase();
+    const nom = ins.jugador?.nombre_completo?.toLowerCase() || '';
+    const ali = ins.jugador?.alias?.toLowerCase() || '';
+    const club = ins.jugador?.club_ciudad?.toLowerCase() || '';
+    const ced = ins.jugador?.cedula?.toLowerCase() || '';
+    return nom.includes(q) || ali.includes(q) || club.includes(q) || ced.includes(q);
+  });
+
+  const totalInscritos = inscripciones.length;
+  const totalPagados = inscripciones.filter((i) => i.pago_confirmado).length;
+  const totalSeleccionados = seleccionadosIds.size;
+
+  // Jugadores seleccionados completos para cálculos y sorteo
+  const participantesSeleccionados = inscripciones.filter((i) => seleccionadosIds.has(i.jugador_id));
+
+  // Reglas de grupos y clasificación UMB
   const clasificadosEstimados = jugadoresPorGrupo === 3 ? 2 : Math.floor(jugadoresPorGrupo / 2);
-  const numGrupos = Math.ceil(participantes.length / jugadoresPorGrupo);
+  const numGrupos = Math.ceil(totalSeleccionados / jugadoresPorGrupo);
 
   const sorteo = useMutation({
     mutationFn: async () => {
-      const ids = participantes.map((j) => j.id);
+      const ids = Array.from(seleccionadosIds);
+      if (ids.length < 2) {
+        throw new Error('Debes seleccionar al menos 2 jugadores para el sorteo');
+      }
 
       // Crear grupos si no hay suficientes
       if (gruposExistentes < numGrupos) {
@@ -459,22 +532,11 @@ function SorteoModal({ faseId, gruposExistentes, onClose, onSuccess }: {
 
       // Limpiar borrador temporal guardado
       try {
-        localStorage.removeItem(`sorteo_participantes_${faseId}`);
+        localStorage.removeItem(`sorteo_ids_${faseId}`);
       } catch { /* noop */ }
     },
     onSuccess,
   });
-
-  function agregarJugador(j: Jugador) {
-    if (!participantes.find((p) => p.id === j.id)) {
-      setParticipantes([...participantes, j]);
-    }
-    setBuscar('');
-  }
-
-  function quitarJugador(id: string) {
-    setParticipantes(participantes.filter((p) => p.id !== id));
-  }
 
   function imprimirListadoParticipantes() {
     const printWindow = window.open('', '_blank');
@@ -488,7 +550,7 @@ function SorteoModal({ faseId, gruposExistentes, onClose, onSuccess }: {
       <!DOCTYPE html>
       <html>
         <head>
-          <title>Listado Oficial de Participantes - TriBanda</title>
+          <title>Listado Oficial de Participantes para Sorteo - TriBanda</title>
           <style>
             body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 24px; color: #111827; }
             .header { border-bottom: 3px solid #15803d; padding-bottom: 12px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: flex-end; }
@@ -506,11 +568,11 @@ function SorteoModal({ faseId, gruposExistentes, onClose, onSuccess }: {
           <div class="header">
             <div>
               <div class="title">🎱 Torneo de Billar a Tres Bandas</div>
-              <div class="meta">Listado Oficial de Jugadores Inscritos para Sorteo</div>
+              <div class="meta">Listado Oficial de Jugadores Confirmados para Sorteo de Grupos</div>
             </div>
             <div class="meta" style="text-align: right;">
               <div>Fecha: <strong>${fechaHoy}</strong></div>
-              <div>Total Inscritos: <strong>${participantes.length}</strong></div>
+              <div>Participantes Seleccionados: <strong>${participantesSeleccionados.length}</strong></div>
             </div>
           </div>
 
@@ -520,17 +582,19 @@ function SorteoModal({ faseId, gruposExistentes, onClose, onSuccess }: {
                 <th style="width: 40px; text-align: center;">#</th>
                 <th>Nombre y Apellido</th>
                 <th>Club / Procedencia</th>
+                <th style="text-align: center; width: 90px;">Estado Pago</th>
                 <th style="text-align: center; width: 80px;">Hándicap</th>
-                <th style="text-align: center; width: 100px;">Firma / Check</th>
+                <th style="text-align: center; width: 100px;">Firma / Mesa</th>
               </tr>
             </thead>
             <tbody>
-              ${participantes.map((p, idx) => `
+              ${participantesSeleccionados.map((p, idx) => `
                 <tr>
                   <td style="text-align: center; font-weight: bold;">${idx + 1}</td>
-                  <td><strong>${p.nombre_completo}</strong> ${p.alias ? `<em>("${p.alias}")</em>` : ''}</td>
-                  <td>${p.club_ciudad || 'Sin Club'}</td>
-                  <td style="text-align: center;" class="badge">${(p as any).meta_puntos || 30} pts</td>
+                  <td><strong>${p.jugador?.nombre_completo}</strong> ${p.jugador?.alias ? `<em>("${p.jugador.alias}")</em>` : ''}</td>
+                  <td>${p.jugador?.club_ciudad || 'Sin Club'}</td>
+                  <td style="text-align: center;">${p.pago_confirmado ? '✓ Pagado' : '⏳ Pendiente'}</td>
+                  <td style="text-align: center;" class="badge">${p.meta_puntos || 30} pts</td>
                   <td style="text-align: center; color: #9ca3af;">[ &nbsp; ]</td>
                 </tr>
               `).join('')}
@@ -538,7 +602,7 @@ function SorteoModal({ faseId, gruposExistentes, onClose, onSuccess }: {
           </table>
 
           <div class="footer">
-            Generado por TRIBANDA — Software de Gestión de Torneos de Billar a Tres Bandas
+            Generado por TRIBANDA — Software Profesional de Gestión de Billar a Tres Bandas
           </div>
         </body>
       </html>
@@ -552,118 +616,257 @@ function SorteoModal({ faseId, gruposExistentes, onClose, onSuccess }: {
     }, 250);
   }
 
-  const disponibles = jugadores.filter((j) => !participantes.find((p) => p.id === j.id));
-
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto border border-gray-100">
-        <div className="flex items-center justify-between mb-4 pb-2 border-b border-gray-100">
-          <h3 className="font-bold text-lg text-gray-900 flex items-center gap-2">
-            <span>🎲</span> Sorteo automático y Creación de Partidas
-          </h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 font-bold">✕</button>
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-3 sm:p-4 animate-in fade-in duration-200">
+      <div className="bg-white rounded-2xl shadow-2xl p-5 sm:p-6 w-full max-w-2xl max-h-[92vh] flex flex-col border border-gray-100">
+        
+        {/* Encabezado del modal */}
+        <div className="flex items-start justify-between pb-3 border-b border-gray-100">
+          <div>
+            <h3 className="font-bold text-lg text-gray-900 flex items-center gap-2">
+              <span className="p-1.5 bg-emerald-100 text-emerald-800 rounded-lg text-base">🎲</span>
+              Sorteo Automático de Grupos
+            </h3>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Selecciona y chulea los jugadores <strong>inscritos en este torneo</strong> que participarán en el sorteo.
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 rounded-full flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition"
+          >
+            ✕
+          </button>
         </div>
 
-        {/* Buscador */}
-        <div className="mb-4">
-          <label className="label font-semibold text-xs uppercase text-gray-600">Buscar y agregar jugadores</label>
-          <input
-            type="text" value={buscar} onChange={(e) => setBuscar(e.target.value)}
-            placeholder="Escribe nombre, alias o cédula..."
-            className="input"
-          />
-          {buscar.length >= 2 && disponibles.length > 0 && (
-            <div className="border rounded-lg mt-1 max-h-40 overflow-y-auto shadow-sm">
-              {disponibles.slice(0, 10).map((j) => (
-                <button key={j.id} onClick={() => agregarJugador(j)}
-                  className="w-full text-left px-3 py-2 hover:bg-primary-50 text-sm flex justify-between items-center border-b last:border-0">
-                  <span className="font-medium">{j.nombre_completo} {j.alias ? `"${j.alias}"` : ''}</span>
-                  <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded">{j.club_ciudad}</span>
-                </button>
-              ))}
-            </div>
-          )}
+        {/* Barra de estado y acciones rápidas de selección */}
+        <div className="mt-3 bg-gray-50 p-3 rounded-xl border border-gray-200 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2 text-xs">
+            <span className="font-bold text-gray-800 bg-white px-2.5 py-1 rounded-md border border-gray-200 shadow-2xs">
+              🎯 {totalSeleccionados} seleccionados
+            </span>
+            <span className="text-gray-500">
+              de {totalInscritos} inscritos ({totalPagados} con pago)
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={chulearTodos}
+              className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md text-xs font-semibold shadow-2xs transition"
+            >
+              ✓ Chulear todos
+            </button>
+            <button
+              type="button"
+              onClick={chulearSoloPagados}
+              className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-md text-xs font-semibold transition"
+              title="Selecciona solo los que tienen el pago de inscripción confirmado"
+            >
+              💰 Solo pagados
+            </button>
+            <button
+              type="button"
+              onClick={desmarcarTodos}
+              className="px-2.5 py-1 bg-white hover:bg-gray-100 text-gray-600 border border-gray-300 rounded-md text-xs font-medium transition"
+            >
+              Desmarcar
+            </button>
+          </div>
         </div>
 
-        {/* Lista de participantes con guardado progresivo */}
-        <div className="mb-4">
-          <div className="flex items-center justify-between mb-1.5">
-            <label className="label font-semibold text-xs uppercase text-gray-600 mb-0">
-              Participantes Inscritos ({participantes.length})
-            </label>
-            {participantes.length > 0 && (
+        {/* Buscador + Filtros por estado de pago */}
+        <div className="mt-3 flex flex-col sm:flex-row gap-2">
+          <div className="relative flex-1">
+            <input
+              type="text"
+              value={buscar}
+              onChange={(e) => setBuscar(e.target.value)}
+              placeholder="Buscar por nombre, alias, club o cédula..."
+              className="w-full text-xs pl-8 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+            />
+            <span className="material-icons absolute left-2.5 top-2 text-gray-400 text-sm">search</span>
+            {buscar && (
               <button
-                type="button"
-                onClick={imprimirListadoParticipantes}
-                className="text-xs text-primary-700 hover:text-primary-800 font-bold flex items-center gap-1 underline"
-                title="Imprimir o exportar a PDF con membrete oficial"
+                onClick={() => setBuscar('')}
+                className="absolute right-2.5 top-2 text-xs text-gray-400 hover:text-gray-600 font-bold"
               >
-                <span>🖨️</span> Imprimir / Ver listado
+                ✕
               </button>
             )}
           </div>
 
-          {participantes.length === 0 ? (
-            <div className="bg-gray-50 border border-dashed border-gray-200 rounded-xl p-4 text-center">
-              <p className="text-gray-400 text-xs">Busca y agrega participantes. Se irán guardando automáticamente.</p>
+          <div className="flex rounded-lg border border-gray-200 bg-gray-50 p-0.5 text-xs">
+            <button
+              type="button"
+              onClick={() => setFiltroPago('todos')}
+              className={`px-3 py-1.5 rounded-md font-medium transition ${
+                filtroPago === 'todos' ? 'bg-white text-gray-900 shadow-2xs font-bold' : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Todos ({totalInscritos})
+            </button>
+            <button
+              type="button"
+              onClick={() => setFiltroPago('pagados')}
+              className={`px-3 py-1.5 rounded-md font-medium transition ${
+                filtroPago === 'pagados' ? 'bg-emerald-600 text-white shadow-2xs font-bold' : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Pagados ({totalPagados})
+            </button>
+            <button
+              type="button"
+              onClick={() => setFiltroPago('pendientes')}
+              className={`px-3 py-1.5 rounded-md font-medium transition ${
+                filtroPago === 'pendientes' ? 'bg-amber-500 text-white shadow-2xs font-bold' : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Pendientes ({totalInscritos - totalPagados})
+            </button>
+          </div>
+        </div>
+
+        {/* Ventana / Cuadro de selección de jugadores inscritos ("chuleo") */}
+        <div className="mt-3 flex-1 overflow-y-auto border border-gray-200 rounded-xl divide-y divide-gray-100 max-h-64 sm:max-h-72 bg-white">
+          {isLoading ? (
+            <div className="p-8 text-center text-xs text-gray-400">Cargando jugadores inscritos...</div>
+          ) : inscripcionesFiltradas.length === 0 ? (
+            <div className="p-8 text-center text-xs text-gray-500">
+              No se encontraron jugadores con ese filtro en este torneo.
             </div>
           ) : (
-            <div className="space-y-1.5 max-h-48 overflow-y-auto border rounded-xl p-2 bg-gray-50/50">
-              {participantes.map((j, i) => (
-                <div key={j.id} className="flex items-center justify-between bg-white border border-gray-200 rounded-lg px-3 py-1.5 text-xs shadow-2xs">
-                  <span className="font-medium text-gray-800">
-                    <strong className="text-gray-400 mr-1.5">{i + 1}.</strong>
-                    {j.nombre_completo}
-                    <span className="text-gray-400 font-normal ml-1.5">— {j.club_ciudad}</span>
-                  </span>
-                  <button onClick={() => quitarJugador(j.id)} className="text-red-500 hover:text-red-700 font-bold text-xs p-1">✕</button>
+            inscripcionesFiltradas.map((ins) => {
+              const checked = seleccionadosIds.has(ins.jugador_id);
+              const j = ins.jugador;
+              return (
+                <div
+                  key={ins.id}
+                  onClick={() => toggleJugador(ins.jugador_id)}
+                  className={`flex items-center justify-between px-3.5 py-2.5 cursor-pointer select-none transition ${
+                    checked ? 'bg-emerald-50/70 hover:bg-emerald-100/60' : 'hover:bg-gray-50'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => {}} // Manejado por onClick del contenedor
+                      className="w-4 h-4 text-emerald-600 rounded border-gray-300 focus:ring-emerald-500 cursor-pointer"
+                    />
+                    <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-800 font-bold text-xs flex items-center justify-center shrink-0">
+                      {j?.nombre_completo ? j.nombre_completo.charAt(0).toUpperCase() : 'J'}
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-gray-900 flex items-center gap-1.5">
+                        <span>{j?.nombre_completo}</span>
+                        {j?.alias && <span className="text-gray-500 font-normal">"{j.alias}"</span>}
+                      </div>
+                      <div className="text-[11px] text-gray-500 flex items-center gap-2">
+                        <span>{j?.club_ciudad || 'Sin Club'}</span>
+                        {j?.categoria && (
+                          <span className="text-gray-400">• Cat. {j.categoria}</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-[11px] font-semibold bg-gray-100 text-gray-700 px-2 py-0.5 rounded-full">
+                      {ins.meta_puntos || 30} pts ({ins.nivel || 'Primera'})
+                    </span>
+
+                    {ins.pago_confirmado ? (
+                      <span className="inline-flex items-center gap-0.5 text-[10px] font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
+                        <span>✓</span> Pagado
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-0.5 text-[10px] font-bold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">
+                        <span>⏳</span> Pago Pendiente
+                      </span>
+                    )}
+                  </div>
                 </div>
-              ))}
-            </div>
+              );
+            })
           )}
         </div>
 
         {/* Configuración de tamaño de grupos y regla de clasificación */}
-        {participantes.length >= 2 && (
-          <div className="mb-5 p-3.5 bg-gray-50 border border-gray-200 rounded-xl">
-            <label className="label font-semibold text-xs uppercase text-gray-700">Tamaño de grupos (Reglamento)</label>
+        {totalSeleccionados >= 2 && (
+          <div className="mt-3 p-3 bg-gray-50 border border-gray-200 rounded-xl">
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-xs font-bold uppercase tracking-wider text-gray-700">
+                Tamaño de los Grupos (Reglamento Oficial)
+              </label>
+              {totalSeleccionados > 0 && (
+                <button
+                  type="button"
+                  onClick={imprimirListadoParticipantes}
+                  className="text-xs text-emerald-700 hover:text-emerald-800 font-bold flex items-center gap-1 underline"
+                  title="Imprimir listado oficial de confirmados"
+                >
+                  <span>🖨️</span> Imprimir planilla de participantes
+                </button>
+              )}
+            </div>
+
             <div className="grid grid-cols-3 gap-2">
               {[3, 4, 6].map((size) => (
                 <button
                   key={size}
                   type="button"
                   onClick={() => setJugadoresPorGrupo(size)}
-                  className={`py-2 rounded-lg text-xs font-bold border transition ${
+                  className={`py-1.5 rounded-lg text-xs font-bold border transition ${
                     jugadoresPorGrupo === size
-                      ? 'bg-primary-600 text-white border-primary-600 shadow-sm'
+                      ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
                       : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100'
                   }`}
                 >
-                  {size} jugadores
+                  {size} jugadores por grupo
                 </button>
               ))}
             </div>
-            <div className="mt-2.5 p-2 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-900 leading-tight">
-              <strong>Regla Oficial:</strong> Se crearán {numGrupos} grupo(s) de hasta {jugadoresPorGrupo} jugadores.
-              <span className="font-bold text-emerald-700 block mt-0.5">
-                Clasifican {clasificadosEstimados} por grupo {jugadoresPorGrupo === 3 ? '(en grupos de 3 clasifican 2)' : ''}.
-              </span>
+
+            <div className="mt-2 p-2 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-950 flex items-center justify-between">
+              <div>
+                <strong>Estructura generada:</strong> {numGrupos} grupo(s) de hasta {jugadoresPorGrupo} jugadores.
+              </div>
+              <div className="font-bold text-emerald-800">
+                Clasifican {clasificadosEstimados} por grupo {jugadoresPorGrupo === 3 ? '(UMB)' : ''}
+              </div>
             </div>
           </div>
         )}
 
         {sorteo.isError && (
-          <p className="error mb-3">{(sorteo.error as any)?.response?.data?.error ?? 'Error al sortear'}</p>
+          <p className="mt-2 text-xs font-medium text-red-600 bg-red-50 p-2 rounded-lg border border-red-200">
+            {(sorteo.error as any)?.response?.data?.error ?? 'Error al sortear'}
+          </p>
         )}
 
-        <div className="flex gap-2 justify-end pt-2 border-t border-gray-100">
-          <button onClick={onClose} className="btn-secondary">Cancelar</button>
+        {/* Botones de acción final */}
+        <div className="flex gap-2 justify-end pt-3 mt-3 border-t border-gray-100">
+          <button onClick={onClose} className="px-4 py-2 border border-gray-300 text-gray-700 rounded-xl text-xs font-bold hover:bg-gray-100 transition">
+            Cancelar
+          </button>
           <button
             onClick={() => sorteo.mutate()}
-            disabled={sorteo.isPending || participantes.length < 2}
-            className="btn-primary"
+            disabled={sorteo.isPending || totalSeleccionados < 2}
+            className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 transition"
           >
-            {sorteo.isPending ? 'Sorteando...' : `Sortear ${participantes.length} jugadores`}
+            {sorteo.isPending ? (
+              <>
+                <span className="material-icons animate-spin text-sm">autorenew</span>
+                <span>Realizando Sorteo...</span>
+              </>
+            ) : (
+              <>
+                <span>🎲</span>
+                <span>Ejecutar Sorteo ({totalSeleccionados} jugadores)</span>
+              </>
+            )}
           </button>
         </div>
       </div>

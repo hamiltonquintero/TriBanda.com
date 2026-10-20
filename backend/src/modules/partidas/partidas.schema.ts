@@ -24,6 +24,8 @@ export const iniciarPartidaSchema = z.object({
   meta_b: z.coerce.number().int().min(1).optional(),
   limite_entradas: z.coerce.number().int().min(5).max(100).nullable().optional(),
   modo_libre: z.boolean().optional(),
+  juez_id: z.string().optional().nullable().or(z.literal('')),
+  juez_nombre: z.string().optional().nullable(),
 }).optional();
 
 export const registrarEntradaSchema = z.object({

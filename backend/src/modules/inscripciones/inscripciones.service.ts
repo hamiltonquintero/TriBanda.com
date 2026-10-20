@@ -47,6 +47,46 @@ export async function inscribirJugador(torneo_id: string, jugador_id: string, me
   });
 }
 
+// ─── INSCRIBIR LOTE DE JUGADORES (Desde el directorio general) ───────────────
+
+export async function inscribirLote(torneo_id: string, jugador_ids: string[]) {
+  if (!Array.isArray(jugador_ids) || jugador_ids.length === 0) {
+    throw new Error('Debe proporcionar al menos un jugador');
+  }
+
+  const jugadores = await prisma.jugador.findMany({
+    where: { id: { in: jugador_ids }, activo: true },
+  });
+
+  const yaInscritos = await prisma.inscripcionTorneo.findMany({
+    where: { torneo_id, jugador_id: { in: jugador_ids } },
+    select: { jugador_id: true },
+  });
+  const yaInscritosSet = new Set(yaInscritos.map((y) => y.jugador_id));
+
+  const nuevos = jugadores.filter((j) => !yaInscritosSet.has(j.id));
+  if (nuevos.length === 0) {
+    return { agregados: 0, mensaje: 'Todos los jugadores seleccionados ya estaban inscritos en el torneo' };
+  }
+
+  const dataToInsert = nuevos.map((j) => {
+    const { nivel, meta_puntos } = calcularNivelYMeta(j.promedio_historico);
+    return {
+      torneo_id,
+      jugador_id: j.id,
+      nivel,
+      meta_puntos,
+      pago_confirmado: false,
+    };
+  });
+
+  await prisma.inscripcionTorneo.createMany({
+    data: dataToInsert,
+  });
+
+  return { agregados: dataToInsert.length };
+}
+
 // ─── ACTUALIZAR META MANUAL ──────────────────────────────────────────────────
 
 export async function actualizarMeta(id: string, data: { nivel?: string; meta_puntos?: number; pago_confirmado?: boolean }) {

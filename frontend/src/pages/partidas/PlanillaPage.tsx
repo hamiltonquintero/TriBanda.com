@@ -41,16 +41,23 @@ export default function PlanillaPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['planilla', id] }),
   });
 
-  const { data: jueces = [] } = useQuery<{ id: string; nombre: string; email: string }[]>({
+  const [modalJuez, setModalJuez] = useState(false);
+  const [juezNombreInput, setJuezNombreInput] = useState('');
+  const [juezIdInput, setJuezIdInput] = useState('');
+
+  const { data: jueces = [] } = useQuery<{ id: string; nombre: string; email: string; rol?: string }[]>({
     queryKey: ['jueces-oficiales'],
-    queryFn: () => api.get('/auth/usuarios?rol=juez').then((r) => (Array.isArray(r.data) ? r.data : [])),
-    enabled: hasRole('admin'),
+    queryFn: () => api.get('/auth/usuarios').then((r) => (Array.isArray(r.data) ? r.data : [])),
+    enabled: hasRole('admin', 'juez'),
   });
 
   const asignarJuez = useMutation({
-    mutationFn: (juez_id: string | null) => api.patch(`/partidas/${id}/asignar-juez`, { juez_id }),
+    mutationFn: (data: { juez_id?: string | null; juez_nombre?: string | null }) =>
+      api.patch(`/partidas/${id}/asignar-juez`, data),
     onSuccess: () => {
+      setModalJuez(false);
       qc.invalidateQueries({ queryKey: ['planilla', id] });
+      qc.invalidateQueries({ queryKey: ['marcador', id] });
     },
     onError: (err: any) => {
       alert(err.response?.data?.error || 'Error al asignar juez');
@@ -158,29 +165,92 @@ export default function PlanillaPage() {
             </div>
 
             <div className="flex flex-wrap items-center gap-4 text-xs text-gray-600 mt-3 pt-2 border-t border-gray-100">
-              <div className="flex items-center gap-1.5">
-                <strong>Juez:</strong>
-                {hasRole('admin') ? (
-                  <select
-                    value={encabezado.juez?.id || ''}
-                    onChange={(e) => asignarJuez.mutate(e.target.value || null)}
-                    className="text-xs bg-gray-50 border border-gray-300 rounded px-2 py-0.5 font-medium text-gray-800 hover:border-primary-500"
-                    title="Asignar o cambiar juez oficial de esta partida"
+              <div className="flex items-center gap-2">
+                <strong>⚖️ Juez Oficial:</strong>
+                <span className="font-semibold text-gray-900 bg-gray-100 px-2.5 py-0.5 rounded border border-gray-200">
+                  {encabezado.juez?.nombre || 'Sin juez asignado'}
+                </span>
+                {hasRole('admin', 'juez') && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setJuezIdInput(encabezado.juez?.id || '');
+                      setJuezNombreInput(encabezado.juez?.nombre || '');
+                      setModalJuez(true);
+                    }}
+                    className="text-[11px] bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold px-2 py-0.5 rounded transition"
                   >
-                    <option value="">— Sin juez asignado —</option>
-                    {jueces.map((j) => (
-                      <option key={j.id} value={j.id}>
-                        ⚖️ {j.nombre}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <span>{encabezado.juez?.nombre ?? 'Sin juez asignado'}</span>
+                    ✏️ {encabezado.juez?.nombre ? 'Cambiar Juez' : 'Asignar Juez'}
+                  </button>
                 )}
               </div>
               <span><strong>Fecha:</strong> {encabezado.fecha ? new Date(encabezado.fecha).toLocaleDateString('es-CO') : 'Sin fecha'}</span>
             </div>
           </div>
+
+          {/* Modal para cambiar juez en planilla */}
+          {modalJuez && (
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-2xl shadow-2xl p-5 w-full max-w-sm border border-gray-100">
+                <div className="flex items-center justify-between pb-2 border-b border-gray-100 mb-3">
+                  <h4 className="font-bold text-sm text-gray-900 flex items-center gap-1.5">
+                    <span>⚖️</span> Asignar / Cambiar Juez Oficial
+                  </h4>
+                  <button onClick={() => setModalJuez(false)} className="text-gray-400 hover:text-gray-600 text-sm font-bold">✕</button>
+                </div>
+
+                <div className="space-y-3 mb-4">
+                  {jueces.length > 0 && (
+                    <div>
+                      <label className="text-[11px] text-gray-500 block mb-1">Jueces del sistema:</label>
+                      <select
+                        value={juezIdInput}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setJuezIdInput(val);
+                          const sel = jueces.find((u) => u.id === val);
+                          if (sel) setJuezNombreInput(sel.nombre);
+                        }}
+                        className="w-full text-xs p-2 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500"
+                      >
+                        <option value="">-- Seleccionar de la lista --</option>
+                        {jueces.map((u) => (
+                          <option key={u.id} value={u.id}>{u.nombre} ({u.rol === 'juez' ? 'Juez' : u.rol})</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="text-[11px] text-gray-700 font-semibold block mb-1">
+                      Nombre del juez (o escribir manualmente):
+                    </label>
+                    <input
+                      type="text"
+                      value={juezNombreInput}
+                      onChange={(e) => {
+                        setJuezNombreInput(e.target.value);
+                        if (juezIdInput) setJuezIdInput('');
+                      }}
+                      placeholder="Escribe el nombre del juez..."
+                      className="w-full text-xs p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex gap-2 justify-end">
+                  <button onClick={() => setModalJuez(false)} className="btn-secondary text-xs py-1.5">Cancelar</button>
+                  <button
+                    onClick={() => asignarJuez.mutate({ juez_id: juezIdInput || null, juez_nombre: juezNombreInput || null })}
+                    disabled={asignarJuez.isPending}
+                    className="btn-primary text-xs py-1.5"
+                  >
+                    {asignarJuez.isPending ? 'Guardando...' : 'Guardar Juez'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="flex flex-col lg:items-end gap-2">
             <EstadoBadge estado={estado} confirmada={confirmada} />

@@ -119,7 +119,7 @@ export async function listarSolicitudesCorreccion(req: Request, res: Response, n
 
 export async function asignarJuez(req: AuthRequest, res: Response, next: NextFunction) {
   try {
-    const { juez_id } = req.body as { juez_id?: string | null };
-    res.json(await svc.asignarJuez(req.params.id, juez_id));
+    const { juez_id, juez_nombre } = req.body as { juez_id?: string | null; juez_nombre?: string | null };
+    res.json(await svc.asignarJuez(req.params.id, juez_id, juez_nombre));
   } catch (err) { next(err); }
 }

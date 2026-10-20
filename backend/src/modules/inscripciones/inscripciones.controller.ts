@@ -31,6 +31,13 @@ export async function inscribirJugador(req: Request, res: Response, next: NextFu
   } catch (err) { next(err); }
 }
 
+export async function inscribirLote(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { jugador_ids } = req.body;
+    res.status(201).json(await svc.inscribirLote(req.params.torneo_id, jugador_ids));
+  } catch (err) { next(err); }
+}
+
 export async function actualizarMeta(req: Request, res: Response, next: NextFunction) {
   try {
     const data = actualizarMetaSchema.parse(req.body);

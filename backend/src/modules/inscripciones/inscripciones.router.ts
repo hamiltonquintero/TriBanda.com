@@ -8,6 +8,7 @@ const router = Router();
 router.get('/:torneo_id', ctrl.listarParticipantes);
 
 // Admin
+router.post('/:torneo_id/lote', authGuard, roleGuard('admin'), ctrl.inscribirLote);
 router.post('/:torneo_id', authGuard, roleGuard('admin'), ctrl.inscribirJugador);
 router.put('/meta/:id', authGuard, roleGuard('admin'), ctrl.actualizarMeta);
 router.delete('/:torneo_id/:jugador_id', authGuard, roleGuard('admin'), ctrl.removerParticipante);

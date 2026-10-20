@@ -27,6 +27,7 @@ interface MarcadorData {
   modo_libre?: boolean;
   jugador_a: { id: string; nombre_completo: string; alias?: string; foto_url?: string };
   jugador_b: { id: string; nombre_completo: string; alias?: string; foto_url?: string };
+  juez?: { id: string; nombre: string; email?: string } | null;
   ganador?: { id: string; nombre_completo: string };
   sets: MarcadorSet[];
   resumen: {
@@ -43,6 +44,7 @@ export default function MarcadorPage() {
   const qc = useQueryClient();
   const [setActivo, setSetActivo] = useState(1);
   const [mostrarModalInicio, setMostrarModalInicio] = useState(false);
+  const [modalCambiarJuez, setModalCambiarJuez] = useState(false);
 
   // Estados para el protocolo previo de inicio
   const [salidaJugadorId, setSalidaJugadorId] = useState<string>('');
@@ -52,11 +54,19 @@ export default function MarcadorPage() {
   const [handicapB, setHandicapB] = useState<number>(30);
   const [esModoLibre, setEsModoLibre] = useState<boolean>(false);
   const [limiteEntradas, setLimiteEntradas] = useState<number>(25);
+  const [juezId, setJuezId] = useState<string>('');
+  const [juezNombre, setJuezNombre] = useState<string>('');
 
   const { data: marcador, isLoading } = useQuery<MarcadorData>({
     queryKey: ['marcador', id],
     queryFn: () => api.get(`/partidas/marcador/${id}`).then((r) => r.data),
     refetchInterval: 2000,
+  });
+
+  const { data: listaJueces = [] } = useQuery<{ id: string; nombre: string; rol?: string }[]>({
+    queryKey: ['usuarios-jueces'],
+    queryFn: () => api.get('/auth/usuarios').then((r) => (Array.isArray(r.data) ? r.data : [])).catch(() => []),
+    enabled: hasRole('admin', 'juez'),
   });
 
   const iniciar = useMutation({
@@ -65,6 +75,19 @@ export default function MarcadorPage() {
       setMostrarModalInicio(false);
       qc.invalidateQueries({ queryKey: ['marcador', id] });
       qc.invalidateQueries({ queryKey: ['planilla', id] });
+    },
+  });
+
+  const asignarJuezMut = useMutation({
+    mutationFn: (data: { juez_id?: string | null; juez_nombre?: string | null }) =>
+      api.patch(`/partidas/${id}/asignar-juez`, data),
+    onSuccess: () => {
+      setModalCambiarJuez(false);
+      qc.invalidateQueries({ queryKey: ['marcador', id] });
+      qc.invalidateQueries({ queryKey: ['planilla', id] });
+    },
+    onError: (err: any) => {
+      alert(err.response?.data?.error || 'Error al asignar juez');
     },
   });
 
@@ -77,6 +100,8 @@ export default function MarcadorPage() {
       setHandicapB(marcador.meta_b || 30);
       setEsModoLibre(!!marcador.modo_libre);
       setLimiteEntradas(marcador.limite_entradas || 25);
+      setJuezId(marcador.juez?.id || '');
+      setJuezNombre(marcador.juez?.nombre || '');
     }
     setMostrarModalInicio(true);
   }
@@ -95,6 +120,8 @@ export default function MarcadorPage() {
       meta_b: Number(handicapB),
       modo_libre: esModoLibre,
       limite_entradas: esModoLibre ? null : Number(limiteEntradas),
+      juez_id: juezId || null,
+      juez_nombre: juezNombre || null,
     });
   }
 
@@ -329,6 +356,62 @@ export default function MarcadorPage() {
               )}
             </div>
 
+            {/* 5. Juez Oficial de la Partida */}
+            <div className="mb-5 bg-gray-50 p-3.5 rounded-xl border border-gray-200">
+              <label className="block text-xs font-bold uppercase tracking-wider text-gray-700 mb-2 flex items-center gap-1.5">
+                <span>⚖️</span> 5. Juez Oficial de la Partida
+              </label>
+
+              <div className="space-y-2.5">
+                {listaJueces.length > 0 && (
+                  <div>
+                    <label className="text-[11px] text-gray-500 block mb-1">
+                      Seleccionar de la lista de jueces registrados:
+                    </label>
+                    <select
+                      value={juezId}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setJuezId(val);
+                        const sel = listaJueces.find((u) => u.id === val);
+                        if (sel) setJuezNombre(sel.nombre);
+                      }}
+                      className="w-full text-xs p-2 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500"
+                    >
+                      <option value="">-- Seleccionar juez registrado --</option>
+                      {listaJueces.map((u) => (
+                        <option key={u.id} value={u.id}>
+                          {u.nombre} ({u.rol === 'juez' ? 'Juez Oficial' : u.rol})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                <div>
+                  <label className="text-[11px] text-gray-700 font-semibold block mb-1">
+                    O escribir el nombre del juez en este momento:
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={juezNombre}
+                      onChange={(e) => {
+                        setJuezNombre(e.target.value);
+                        if (juezId) setJuezId('');
+                      }}
+                      placeholder="Escribe el nombre del juez (ej: Don Pedro, Juez 1...)"
+                      className="w-full text-xs pl-8 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                    />
+                    <span className="material-icons absolute left-2.5 top-2 text-gray-400 text-sm">gavel</span>
+                  </div>
+                  <p className="text-[10px] text-gray-500 mt-1">
+                    El nombre ingresado se asignará a esta partida y aparecerá en la planilla oficial y actas.
+                  </p>
+                </div>
+              </div>
+            </div>
+
             {/* Botones de acción */}
             <div className="flex gap-2 justify-end pt-2 border-t border-gray-100">
               <button
@@ -345,6 +428,70 @@ export default function MarcadorPage() {
                 className="btn-primary flex items-center gap-2"
               >
                 {iniciar.isPending ? 'Iniciando partida...' : '▶ Comenzar Partida Oficial'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal para cambiar o asignar juez en cualquier momento */}
+      {modalCambiarJuez && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl p-5 w-full max-w-sm border border-gray-100">
+            <div className="flex items-center justify-between pb-2 border-b border-gray-100 mb-3">
+              <h4 className="font-bold text-sm text-gray-900 flex items-center gap-1.5">
+                <span>⚖️</span> Asignar / Cambiar Juez de Partida
+              </h4>
+              <button onClick={() => setModalCambiarJuez(false)} className="text-gray-400 hover:text-gray-600 text-sm font-bold">✕</button>
+            </div>
+
+            <div className="space-y-3 mb-4">
+              {listaJueces.length > 0 && (
+                <div>
+                  <label className="text-[11px] text-gray-500 block mb-1">Jueces del sistema:</label>
+                  <select
+                    value={juezId}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setJuezId(val);
+                      const sel = listaJueces.find((u) => u.id === val);
+                      if (sel) setJuezNombre(sel.nombre);
+                    }}
+                    className="w-full text-xs p-2 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500"
+                  >
+                    <option value="">-- Seleccionar de la lista --</option>
+                    {listaJueces.map((u) => (
+                      <option key={u.id} value={u.id}>{u.nombre}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div>
+                <label className="text-[11px] text-gray-700 font-semibold block mb-1">
+                  Nombre del juez (o escribir manualmente):
+                </label>
+                <input
+                  type="text"
+                  value={juezNombre}
+                  onChange={(e) => {
+                    setJuezNombre(e.target.value);
+                    if (juezId) setJuezId('');
+                  }}
+                  placeholder="Escribe el nombre del juez..."
+                  className="w-full text-xs p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setModalCambiarJuez(false)} className="btn-secondary text-xs py-1.5">Cancelar</button>
+              <button
+                onClick={() => asignarJuezMut.mutate({ juez_id: juezId || null, juez_nombre: juezNombre || null })}
+                disabled={asignarJuezMut.isPending}
+                className="btn-primary text-xs py-1.5"
+              >
+                {asignarJuezMut.isPending ? 'Guardando...' : 'Guardar Juez'}
               </button>
             </div>
           </div>
@@ -369,12 +516,33 @@ export default function MarcadorPage() {
         </div>
       )}
 
-      {/* Indicador de Marca Personal */}
+      {/* Indicador de Marca Personal y Barra de Juez */}
       <div className="flex items-center justify-between px-2 mb-2 text-xs text-white/70">
         <span className="font-semibold tracking-wide">TRIBANDA — Marcador Oficial</span>
         <span className="bg-black/30 backdrop-blur-sm px-3 py-0.5 rounded-full border border-white/10 text-[11px]">
           Desarrollado por <strong className="text-emerald-400">Hamilton Quintero</strong>
         </span>
+      </div>
+
+      <div className="flex items-center justify-between bg-black/40 backdrop-blur-md px-3.5 py-2 rounded-xl mb-3 border border-white/10 text-xs text-white">
+        <div className="flex items-center gap-2">
+          <span className="text-base">⚖️</span>
+          <span>
+            Juez Oficial: <strong className="text-yellow-300">{marcador.juez?.nombre || 'Sin juez asignado'}</strong>
+          </span>
+        </div>
+        {hasRole('admin', 'juez') && (
+          <button
+            onClick={() => {
+              setJuezId(marcador.juez?.id || '');
+              setJuezNombre(marcador.juez?.nombre || '');
+              setModalCambiarJuez(true);
+            }}
+            className="text-[11px] bg-white/20 hover:bg-white/30 text-white font-medium px-2.5 py-1 rounded-md transition flex items-center gap-1"
+          >
+            <span>✏️</span> {marcador.juez?.nombre ? 'Cambiar Juez' : 'Asignar Juez'}
+          </button>
+        )}
       </div>
 
       {/* Marcador principal con bolas y protocolo visual */}

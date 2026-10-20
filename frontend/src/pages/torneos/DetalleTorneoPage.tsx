@@ -14,9 +14,9 @@ export default function DetalleTorneoPage() {
   const qc = useQueryClient();
 
   const [modalInscribir, setModalInscribir] = useState(false);
-  const [jugadorSeleccionado, setJugadorSeleccionado] = useState<string>('');
-  const [metaManual, setMetaManual] = useState<number | ''>('');
   const [buscarJugador, setBuscarJugador] = useState('');
+  const [seleccionadosLote, setSeleccionadosLote] = useState<string[]>([]);
+  const [filtroTablaInscritos, setFiltroTablaInscritos] = useState<'todos' | 'pagados' | 'pendientes'>('todos');
 
   const { data: torneo, isLoading } = useQuery<Torneo>({
     queryKey: ['torneo', id],
@@ -46,22 +46,18 @@ export default function DetalleTorneoPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['inscripciones-torneo', id] }),
   });
 
-  const inscribirJugadorMut = useMutation({
-    mutationFn: () =>
-      api.post(`/inscripciones/${id}`, {
-        jugador_id: jugadorSeleccionado,
-        meta_manual: metaManual ? Number(metaManual) : undefined,
-      }),
-    onSuccess: () => {
+
+  const inscribirLoteMut = useMutation({
+    mutationFn: (jugador_ids: string[]) => api.post(`/inscripciones/${id}/lote`, { jugador_ids }),
+    onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ['inscripciones-torneo', id] });
       setModalInscribir(false);
-      setJugadorSeleccionado('');
-      setMetaManual('');
+      setSeleccionadosLote([]);
       setBuscarJugador('');
-      alert('Jugador inscrito correctamente en el torneo.');
+      alert(`¡Éxito! Se inscribieron ${res.data.agregados} jugadores al torneo.`);
     },
     onError: (err: any) => {
-      alert(err.response?.data?.error || 'Error al inscribir jugador');
+      alert(err.response?.data?.error || 'Error al inscribir lote');
     },
   });
 
@@ -423,11 +419,15 @@ export default function DetalleTorneoPage() {
             {hasRole('admin') && (
               <button
                 type="button"
-                onClick={() => setModalInscribir(true)}
-                className="btn-primary text-xs flex items-center gap-1"
+                onClick={() => {
+                  setSeleccionadosLote([]);
+                  setModalInscribir(true);
+                }}
+                className="btn-primary text-xs flex items-center gap-1.5 shadow-sm"
+                title="Abrir directorio general y chulear los jugadores que participarán"
               >
-                <span className="material-icons text-sm">person_add</span>
-                Inscribir Jugador
+                <span className="material-icons text-sm">checklist</span>
+                📋 Directorio (+ Seleccionar Participantes)
               </button>
             )}
           </div>
@@ -437,17 +437,59 @@ export default function DetalleTorneoPage() {
           <p className="text-gray-400 text-xs py-4 text-center">Cargando inscripciones...</p>
         )}
 
+        {/* Filtros de la tabla de inscritos */}
+        {!cargandoInscripciones && inscripciones.length > 0 && (
+          <div className="flex flex-wrap gap-2 mb-4 border-b pb-3">
+            <button
+              type="button"
+              onClick={() => setFiltroTablaInscritos('todos')}
+              className={`text-xs px-3 py-1.5 rounded-lg font-semibold transition ${
+                filtroTablaInscritos === 'todos'
+                  ? 'bg-primary-600 text-white shadow-xs'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              Todos ({inscripciones.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setFiltroTablaInscritos('pagados')}
+              className={`text-xs px-3 py-1.5 rounded-lg font-semibold transition ${
+                filtroTablaInscritos === 'pagados'
+                  ? 'bg-green-600 text-white shadow-xs'
+                  : 'bg-green-50 text-green-800 hover:bg-green-100'
+              }`}
+            >
+              💰 Pagados ({pagadosCount})
+            </button>
+            <button
+              type="button"
+              onClick={() => setFiltroTablaInscritos('pendientes')}
+              className={`text-xs px-3 py-1.5 rounded-lg font-semibold transition ${
+                filtroTablaInscritos === 'pendientes'
+                  ? 'bg-amber-600 text-white shadow-xs'
+                  : 'bg-amber-50 text-amber-800 hover:bg-amber-100'
+              }`}
+            >
+              ⏳ Pago Pendiente ({inscripciones.length - pagadosCount})
+            </button>
+          </div>
+        )}
+
         {!cargandoInscripciones && inscripciones.length === 0 && (
           <div className="text-center py-10 bg-gray-50 rounded-xl border border-dashed border-gray-200">
             <p className="text-gray-400 text-sm">No hay jugadores inscritos en este torneo aún.</p>
             {hasRole('admin') && (
               <button
                 type="button"
-                onClick={() => setModalInscribir(true)}
-                className="btn-primary text-xs mt-3 inline-flex items-center gap-1"
+                onClick={() => {
+                  setSeleccionadosLote([]);
+                  setModalInscribir(true);
+                }}
+                className="btn-primary text-xs mt-3 inline-flex items-center gap-1.5"
               >
-                <span className="material-icons text-sm">person_add</span>
-                Inscribir Primer Jugador
+                <span className="material-icons text-sm">how_to_reg</span>
+                Abrir Directorio y Seleccionar Participantes
               </button>
             )}
           </div>
@@ -462,44 +504,84 @@ export default function DetalleTorneoPage() {
                   <th>Jugador</th>
                   <th>Club / Ciudad</th>
                   <th className="text-center">Categoría</th>
-                  <th className="text-center">Carambolas (Handicap)</th>
-                  <th className="text-center">Pago Confirmado</th>
+                  <th className="text-center">Carambolas</th>
+                  <th className="text-center">Participación</th>
+                  <th className="text-center">Pago Inscripción</th>
                   {hasRole('admin') && <th className="text-center w-20">Acción</th>}
                 </tr>
               </thead>
               <tbody>
-                {inscripciones.map((ins, idx) => (
-                  <tr key={ins.id} className="hover:bg-gray-50 transition">
-                    <td className="text-center font-bold text-gray-400">{idx + 1}</td>
-                    <td>
-                      <span className="font-semibold text-gray-900">{ins.jugador?.nombre_completo}</span>
-                      {ins.jugador?.alias && (
-                        <span className="text-gray-400 italic ml-1">"{ins.jugador.alias}"</span>
-                      )}
-                    </td>
-                    <td className="text-gray-500">
-                      {ins.jugador?.club?.nombre ?? ins.jugador?.club_ciudad ?? '-'}
-                    </td>
-                    <td className="text-center capitalize font-medium text-gray-700">
-                      <span className="badge-blue text-[10px] px-2 py-0.5">{ins.nivel}</span>
-                    </td>
-                    <td className="text-center font-mono font-bold text-primary-700">
-                      {ins.meta_puntos} pts
-                    </td>
-                    <td className="text-center">
-                      {hasRole('admin') ? (
-                        <label className="inline-flex items-center gap-1.5 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={ins.pago_confirmado}
-                            onChange={(e) =>
-                              togglePago.mutate({
-                                inscripcionId: ins.id,
-                                pago: e.target.checked,
-                              })
-                            }
-                            className="w-4 h-4 accent-green-600 rounded cursor-pointer"
-                          />
+                {inscripciones
+                  .filter((ins) => {
+                    if (filtroTablaInscritos === 'pagados') return ins.pago_confirmado;
+                    if (filtroTablaInscritos === 'pendientes') return !ins.pago_confirmado;
+                    return true;
+                  })
+                  .map((ins, idx) => (
+                    <tr key={ins.id} className="hover:bg-gray-50 transition">
+                      <td className="text-center font-bold text-gray-400">{idx + 1}</td>
+                      <td>
+                        <div className="flex items-center gap-2">
+                          {ins.jugador?.foto_url ? (
+                            <img
+                              src={ins.jugador.foto_url}
+                              alt={ins.jugador.nombre_completo}
+                              className="w-7 h-7 rounded-full object-cover border border-gray-200"
+                            />
+                          ) : (
+                            <div className="w-7 h-7 rounded-full bg-emerald-100 text-emerald-800 font-bold flex items-center justify-center text-xs">
+                              {ins.jugador?.nombre_completo?.charAt(0) || 'J'}
+                            </div>
+                          )}
+                          <div>
+                            <span className="font-semibold text-gray-900 block leading-tight">
+                              {ins.jugador?.nombre_completo}
+                            </span>
+                            {ins.jugador?.alias && (
+                              <span className="text-gray-400 italic text-[11px]">"{ins.jugador.alias}"</span>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="text-gray-500">
+                        {ins.jugador?.club?.nombre ?? ins.jugador?.club_ciudad ?? '-'}
+                      </td>
+                      <td className="text-center capitalize font-medium text-gray-700">
+                        <span className="badge-blue text-[10px] px-2 py-0.5">{ins.nivel}</span>
+                      </td>
+                      <td className="text-center font-mono font-bold text-primary-700">
+                        {ins.meta_puntos} pts
+                      </td>
+                      <td className="text-center">
+                        <span className="badge-green text-[10px] px-2 py-0.5 font-bold inline-flex items-center gap-1">
+                          <span>✓</span> Participa
+                        </span>
+                      </td>
+                      <td className="text-center">
+                        {hasRole('admin') ? (
+                          <label className="inline-flex items-center gap-1.5 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={ins.pago_confirmado}
+                              onChange={(e) =>
+                                togglePago.mutate({
+                                  inscripcionId: ins.id,
+                                  pago: e.target.checked,
+                                })
+                              }
+                              className="w-4 h-4 accent-green-600 rounded cursor-pointer"
+                            />
+                            <span
+                              className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                                ins.pago_confirmado
+                                  ? 'bg-green-100 text-green-800'
+                                  : 'bg-red-50 text-red-700'
+                              }`}
+                            >
+                              {ins.pago_confirmado ? 'Pagado' : 'Pendiente'}
+                            </span>
+                          </label>
+                        ) : (
                           <span
                             className={`text-[10px] font-bold px-2 py-0.5 rounded ${
                               ins.pago_confirmado
@@ -509,140 +591,194 @@ export default function DetalleTorneoPage() {
                           >
                             {ins.pago_confirmado ? 'Pagado' : 'Pendiente'}
                           </span>
-                        </label>
-                      ) : (
-                        <span
-                          className={`text-[10px] font-bold px-2 py-0.5 rounded ${
-                            ins.pago_confirmado
-                              ? 'bg-green-100 text-green-800'
-                              : 'bg-red-50 text-red-700'
-                          }`}
-                        >
-                          {ins.pago_confirmado ? 'Pagado' : 'Pendiente'}
-                        </span>
-                      )}
-                    </td>
-                    {hasRole('admin') && (
-                      <td className="text-center">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (
-                              confirm(
-                                `¿Seguro que deseas remover la inscripción de ${ins.jugador?.nombre_completo}?`
-                              )
-                            ) {
-                              removerInscripcionMut.mutate(ins.jugador_id);
-                            }
-                          }}
-                          className="text-red-500 hover:text-red-700 text-xs font-medium"
-                          title="Remover del torneo"
-                        >
-                          Remover
-                        </button>
+                        )}
                       </td>
-                    )}
-                  </tr>
-                ))}
+                      {hasRole('admin') && (
+                        <td className="text-center">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (confirm(`¿Retirar a ${ins.jugador?.nombre_completo} de este torneo?`)) {
+                                removerInscripcionMut.mutate(ins.jugador_id);
+                              }
+                            }}
+                            className="text-red-500 hover:text-red-700 text-xs p-1"
+                            title="Retirar jugador del torneo"
+                          >
+                            ✕ Retirar
+                          </button>
+                        </td>
+                      )}
+                    </tr>
+                  ))}
               </tbody>
             </table>
           </div>
         )}
       </div>
 
-      {/* Modal Inscribir Jugador */}
+      {/* Modal Directorio General y Selección de Participantes */}
       {modalInscribir && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md border border-gray-100">
-            <div className="flex items-center justify-between pb-3 border-b mb-4">
-              <h3 className="font-bold text-lg text-gray-900 flex items-center gap-2">
-                <span>📝</span> Inscribir Jugador al Torneo
-              </h3>
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-2xl border border-gray-100 max-h-[92vh] flex flex-col">
+            <div className="flex items-center justify-between pb-3 border-b mb-3">
+              <div>
+                <h3 className="font-bold text-lg text-gray-900 flex items-center gap-2">
+                  <span>📋</span> Directorio General — Seleccionar Participantes
+                </h3>
+                <p className="text-xs text-gray-500">
+                  Chulea (marca) en la lista a los jugadores que participarán en este torneo
+                </p>
+              </div>
               <button
                 onClick={() => setModalInscribir(false)}
-                className="text-gray-400 hover:text-gray-600"
+                className="text-gray-400 hover:text-gray-600 font-bold text-lg"
               >
                 ✕
               </button>
             </div>
 
-            <div className="space-y-4">
-              {/* Buscador */}
-              <div>
-                <label className="label text-xs uppercase font-semibold text-gray-700">
-                  Buscar Jugador en Directorio
-                </label>
+            {/* Buscador y Controles Rápidos */}
+            <div className="space-y-2 mb-3">
+              <div className="flex flex-col sm:flex-row gap-2">
                 <input
                   type="text"
                   value={buscarJugador}
                   onChange={(e) => setBuscarJugador(e.target.value)}
-                  placeholder="Escribe nombre o club..."
-                  className="input text-xs"
+                  placeholder="🔍 Buscar por nombre, apodo o club..."
+                  className="input text-xs flex-1"
                 />
-              </div>
-
-              {/* Lista disponible */}
-              <div className="border rounded-lg max-h-48 overflow-y-auto">
-                {disponiblesParaInscribir.length === 0 ? (
-                  <p className="text-xs text-gray-400 p-3 text-center">
-                    No hay jugadores disponibles o ya están inscritos.
-                  </p>
-                ) : (
-                  disponiblesParaInscribir.slice(0, 15).map((j) => (
-                    <button
-                      key={j.id}
-                      type="button"
-                      onClick={() => setJugadorSeleccionado(j.id)}
-                      className={`w-full text-left px-3 py-2 text-xs flex justify-between items-center border-b last:border-0 hover:bg-primary-50 transition ${
-                        jugadorSeleccionado === j.id
-                          ? 'bg-primary-100 font-bold text-primary-900'
-                          : ''
-                      }`}
-                    >
-                      <span>
-                        {j.nombre_completo} {j.alias ? `"${j.alias}"` : ''}
-                      </span>
-                      <span className="text-gray-400 font-mono">
-                        {j.promedio_historico ? j.promedio_historico.toFixed(3) : '0.000'}
-                      </span>
-                    </button>
-                  ))
-                )}
-              </div>
-
-              {/* Handicap opcional */}
-              <div>
-                <label className="label text-xs uppercase font-semibold text-gray-700">
-                  Meta de Carambolas (Handicap personalizado opcional)
-                </label>
-                <input
-                  type="number"
-                  value={metaManual}
-                  onChange={(e) =>
-                    setMetaManual(e.target.value ? Number(e.target.value) : '')
-                  }
-                  placeholder={`Por defecto según categoría (ej. ${torneo.meta_base || 30})`}
-                  className="input text-xs"
-                />
+                <div className="flex gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const todosDisponiblesIds = disponiblesParaInscribir.map((j) => j.id);
+                      setSeleccionadosLote(todosDisponiblesIds);
+                    }}
+                    className="btn-outline text-xs text-primary-700 border-primary-300 py-1.5 px-2.5 whitespace-nowrap"
+                  >
+                    ✓ Chulear todos ({disponiblesParaInscribir.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSeleccionadosLote([])}
+                    className="btn-outline text-xs text-gray-600 border-gray-300 py-1.5 px-2.5 whitespace-nowrap"
+                  >
+                    ✕ Desmarcar
+                  </button>
+                </div>
               </div>
             </div>
 
-            <div className="flex gap-2 justify-end pt-4 border-t mt-5">
-              <button
-                type="button"
-                onClick={() => setModalInscribir(false)}
-                className="btn-secondary text-xs"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={() => inscribirJugadorMut.mutate()}
-                disabled={!jugadorSeleccionado || inscribirJugadorMut.isPending}
-                className="btn-primary text-xs"
-              >
-                {inscribirJugadorMut.isPending ? 'Inscribiendo...' : 'Confirmar Inscripción'}
-              </button>
+            {/* Listado de Jugadores con Checkboxes ("Chuleando") */}
+            <div className="border border-gray-200 rounded-xl overflow-y-auto flex-1 divide-y divide-gray-100 min-h-[240px]">
+              {todosJugadores.length === 0 ? (
+                <p className="text-xs text-gray-400 p-8 text-center">
+                  Cargando directorio de jugadores...
+                </p>
+              ) : (
+                todosJugadores
+                  .filter((j) => {
+                    if (!buscarJugador.trim()) return true;
+                    const q = buscarJugador.toLowerCase();
+                    return (
+                      j.nombre_completo.toLowerCase().includes(q) ||
+                      (j.alias && j.alias.toLowerCase().includes(q)) ||
+                      (j.club_ciudad && j.club_ciudad.toLowerCase().includes(q))
+                    );
+                  })
+                  .map((j) => {
+                    const yaInscrito = yaInscritosIds.has(j.id);
+                    const estaSeleccionado = seleccionadosLote.includes(j.id);
+
+                    return (
+                      <label
+                        key={j.id}
+                        className={`flex items-center justify-between p-3 cursor-pointer text-xs transition select-none ${
+                          yaInscrito
+                            ? 'bg-gray-50 opacity-60 cursor-not-allowed'
+                            : estaSeleccionado
+                            ? 'bg-emerald-50/80 font-semibold'
+                            : 'hover:bg-gray-50'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <input
+                            type="checkbox"
+                            disabled={yaInscrito}
+                            checked={yaInscrito || estaSeleccionado}
+                            onChange={(e) => {
+                              if (yaInscrito) return;
+                              if (e.target.checked) {
+                                setSeleccionadosLote([...seleccionadosLote, j.id]);
+                              } else {
+                                setSeleccionadosLote(seleccionadosLote.filter((id) => id !== j.id));
+                              }
+                            }}
+                            className="w-4 h-4 accent-emerald-600 rounded cursor-pointer"
+                          />
+                          <div>
+                            <p className="text-gray-900 font-bold text-xs">
+                              {j.nombre_completo}
+                              {j.alias && <span className="text-gray-500 italic ml-1 font-normal">"{j.alias}"</span>}
+                            </p>
+                            <p className="text-[11px] text-gray-400">
+                              {j.club_ciudad || 'Sin club'} • Promedio:{' '}
+                              <span className="font-mono text-gray-600 font-bold">
+                                {j.promedio_historico ? j.promedio_historico.toFixed(3) : '0.000'}
+                              </span>
+                            </p>
+                          </div>
+                        </div>
+
+                        <div>
+                          {yaInscrito ? (
+                            <span className="text-[10px] bg-gray-200 text-gray-700 px-2 py-0.5 rounded-full font-bold">
+                              ✓ Ya Inscrito
+                            </span>
+                          ) : (
+                            <span
+                              className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                                estaSeleccionado
+                                  ? 'bg-emerald-600 text-white'
+                                  : 'bg-gray-100 text-gray-500'
+                              }`}
+                            >
+                              {estaSeleccionado ? '✓ Seleccionado' : 'Chulear'}
+                            </span>
+                          )}
+                        </div>
+                      </label>
+                    );
+                  })
+              )}
+            </div>
+
+            {/* Footer con Contador y Acción de Inscribir */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-4 border-t mt-3">
+              <span className="text-xs font-bold text-gray-700">
+                🎯 {seleccionadosLote.length} jugadores chuleados para participar
+              </span>
+              <div className="flex gap-2 w-full sm:w-auto justify-end">
+                <button
+                  type="button"
+                  onClick={() => setModalInscribir(false)}
+                  className="btn-secondary text-xs"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => inscribirLoteMut.mutate(seleccionadosLote)}
+                  disabled={seleccionadosLote.length === 0 || inscribirLoteMut.isPending}
+                  className="btn-primary text-xs flex items-center gap-1 font-bold"
+                >
+                  <span className="material-icons text-sm">person_add</span>
+                  {inscribirLoteMut.isPending
+                    ? 'Inscribiendo...'
+                    : `Inscribir ${seleccionadosLote.length} Jugadores al Torneo`}
+                </button>
+              </div>
             </div>
           </div>
         </div>
