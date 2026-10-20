@@ -325,15 +325,15 @@ export default function PartidasPage() {
           ) : (
             /* Tabla de Partidas */
             <div className="overflow-x-auto rounded-xl border border-gray-200">
-              <table className="w-full min-w-[760px] text-xs">
+              <table className="w-full min-w-[880px] text-xs">
                 <thead className="bg-gray-50/80 border-b border-gray-200 text-gray-600 font-semibold uppercase tracking-wider text-[11px]">
                   <tr>
-                    <th className="text-left px-4 py-3">Enfrentamiento (Jugador A vs Jugador B)</th>
-                    <th className="text-center px-3 py-3 w-28">Grupo / Fase</th>
-                    <th className="text-left px-3 py-3 w-48">Juez Oficial</th>
-                    <th className="text-center px-3 py-3 w-32">Estado</th>
-                    <th className="text-center px-3 py-3 w-36">Resultado</th>
-                    <th className="text-right px-4 py-3 w-44">Acciones</th>
+                    <th className="text-left px-4 py-3 min-w-[340px]">Enfrentamiento (Jugador A vs Jugador B)</th>
+                    <th className="text-center px-3 py-3 w-28 whitespace-nowrap">Grupo / Fase</th>
+                    <th className="text-left px-3 py-3 w-44 whitespace-nowrap">Juez Oficial</th>
+                    <th className="text-center px-3 py-3 w-28 whitespace-nowrap">Estado</th>
+                    <th className="text-center px-3 py-3 w-32 whitespace-nowrap">Resultado</th>
+                    <th className="text-right px-4 py-3 w-36 whitespace-nowrap">Acciones</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 bg-white">
@@ -355,41 +355,54 @@ export default function PartidasPage() {
                       >
                         {/* Jugadores */}
                         <td className="px-4 py-3">
-                          <div className="space-y-1">
-                            <div className="flex items-center gap-2">
-                              <span className="w-4 h-4 rounded-full border border-gray-300 bg-white shadow-2xs flex items-center justify-center text-[10px]" title="Bola Blanca">
-                                ⚪
-                              </span>
-                              <span className={`font-bold text-xs ${p.ganador_id === p.jugador_a_id ? 'text-emerald-700 font-extrabold' : 'text-gray-900'}`}>
-                                {p.jugador_a?.nombre_completo}
-                              </span>
-                              {p.jugador_a?.alias && (
-                                <span className="text-[11px] text-gray-400 font-normal">"{p.jugador_a.alias}"</span>
-                              )}
+                          <div className="space-y-1.5">
+                            {/* Jugador A */}
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className="w-4 h-4 shrink-0 rounded-full border border-gray-300 bg-white shadow-2xs flex items-center justify-center text-[10px]" title="Bola Blanca">
+                                  ⚪
+                                </span>
+                                <span className={`font-bold text-xs truncate ${p.ganador_id === p.jugador_a_id ? 'text-emerald-700 font-extrabold' : 'text-gray-900'}`}>
+                                  {p.jugador_a?.nombre_completo}
+                                </span>
+                                {p.jugador_a?.alias && (
+                                  <span className="text-[11px] text-gray-400 italic truncate shrink-0">"{p.jugador_a.alias}"</span>
+                                )}
+                              </div>
                               {p.ganador_id === p.jugador_a_id && (
-                                <span className="text-[10px] text-emerald-800 bg-emerald-100 px-1.5 py-0.2 rounded font-bold">Ganador 🏆</span>
+                                <span className="shrink-0 text-[10px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded-full flex items-center gap-1 whitespace-nowrap">
+                                  <span>✓ Ganador</span>
+                                  <span>🏆</span>
+                                </span>
                               )}
                             </div>
 
-                            <div className="flex items-center gap-2">
-                              <span className="w-4 h-4 rounded-full border border-amber-300 bg-yellow-300 shadow-2xs flex items-center justify-center text-[10px]" title="Bola Amarilla">
-                                🟡
-                              </span>
-                              <span className={`font-bold text-xs ${p.ganador_id === p.jugador_b_id ? 'text-emerald-700 font-extrabold' : 'text-gray-900'}`}>
-                                {p.jugador_b?.nombre_completo}
-                              </span>
-                              {p.jugador_b?.alias && (
-                                <span className="text-[11px] text-gray-400 font-normal">"{p.jugador_b.alias}"</span>
-                              )}
+                            {/* Jugador B */}
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className="w-4 h-4 shrink-0 rounded-full border border-amber-300 bg-yellow-300 shadow-2xs flex items-center justify-center text-[10px]" title="Bola Amarilla">
+                                  🟡
+                                </span>
+                                <span className={`font-bold text-xs truncate ${p.ganador_id === p.jugador_b_id ? 'text-emerald-700 font-extrabold' : 'text-gray-900'}`}>
+                                  {p.jugador_b?.nombre_completo}
+                                </span>
+                                {p.jugador_b?.alias && (
+                                  <span className="text-[11px] text-gray-400 italic truncate shrink-0">"{p.jugador_b.alias}"</span>
+                                )}
+                              </div>
                               {p.ganador_id === p.jugador_b_id && (
-                                <span className="text-[10px] text-emerald-800 bg-emerald-100 px-1.5 py-0.2 rounded font-bold">Ganador 🏆</span>
+                                <span className="shrink-0 text-[10px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded-full flex items-center gap-1 whitespace-nowrap">
+                                  <span>✓ Ganador</span>
+                                  <span>🏆</span>
+                                </span>
                               )}
                             </div>
 
+                            {/* Distancia / Entradas */}
                             {(p.meta_a || p.meta_b) && (
-                              <div className="text-[10px] text-gray-400 pt-0.5">
-                                Distancia: {p.meta_a ?? 30} pts vs {p.meta_b ?? 30} pts
-                                {p.limite_entradas && ` • Máx ${p.limite_entradas} entradas`}
+                              <div className="text-[10px] text-gray-400 pt-0.5 pl-6 flex items-center gap-2">
+                                <span>Distancia: <strong>{p.meta_a ?? 30}</strong> vs <strong>{p.meta_b ?? 30}</strong> pts</span>
+                                {p.limite_entradas && <span>• Máx {p.limite_entradas} entradas</span>}
                               </div>
                             )}
                           </div>
