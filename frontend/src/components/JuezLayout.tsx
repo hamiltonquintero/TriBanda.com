@@ -33,9 +33,12 @@ export default function JuezLayout({ children }: { children: React.ReactNode }) 
         {children}
       </main>
 
-      <footer className="bg-black/40 text-center py-2 border-t border-white/10">
-        <span className="text-white/40 text-xs">TRIBANDA — Panel del Juez</span>
+      <footer className="bg-black/60 text-center py-2.5 border-t border-white/10 text-xs">
+        <span className="text-white/60">TRIBANDA — Panel del Juez</span>
+        <span className="text-white/30 mx-2">•</span>
+        <span className="text-emerald-400 font-semibold">Desarrollado por Hamilton Quintero</span>
       </footer>
     </div>
   );
 }
+

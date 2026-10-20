@@ -18,6 +18,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           <Link to="/" className="flex items-center gap-3">
             <span className="text-2xl font-heading font-extrabold tracking-tight text-white drop-shadow">TRIBANDA</span>
             <span className="text-xs text-accent-300 hidden sm:inline font-light">Gestiona · Juega · Compite</span>
+            <span className="hidden lg:inline-block bg-white/10 text-white/80 text-[11px] px-2.5 py-0.5 rounded-full border border-white/15 ml-1">
+              Desarrollado por <strong className="text-emerald-400">Hamilton Quintero</strong>
+            </span>
           </Link>
           <nav className="flex flex-wrap items-center gap-4 text-sm">
             <Link to="/torneos" className="hover:text-accent-400 transition font-medium text-white/90">Torneos</Link>
@@ -49,10 +52,21 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       </main>
 
       {/* Footer */}
-      <footer className="bg-black/50 backdrop-blur-sm text-center py-4 border-t border-white/10">
-        <span className="font-heading font-bold text-white text-sm">TRIBANDA</span>
-        <span className="text-white/50 text-xs ml-2">Gestiona · Juega · Compite</span>
+      <footer className="bg-black/60 backdrop-blur-sm py-4 border-t border-white/10 text-xs">
+        <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <span className="font-heading font-extrabold text-white text-sm tracking-wider">TRIBANDA</span>
+            <span className="text-white/40">•</span>
+            <span className="text-accent-300 font-medium text-xs">Software Oficial de Billar a Tres Bandas</span>
+          </div>
+          <div className="flex items-center gap-1.5 text-xs text-white/90 bg-white/5 border border-white/10 px-3 py-1 rounded-full shadow-inner">
+            <span className="text-accent-400">⚡</span>
+            <span>Creado y Desarrollado por</span>
+            <strong className="text-emerald-400 font-bold tracking-wide">Hamilton Quintero</strong>
+          </div>
+        </div>
       </footer>
     </div>
   );
 }
+

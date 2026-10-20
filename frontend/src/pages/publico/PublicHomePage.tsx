@@ -21,10 +21,14 @@ export default function PublicHomePage() {
           <div className="flex items-center gap-3">
             <span className="text-3xl font-heading font-extrabold text-white">TRIBANDA</span>
             <span className="text-accent-400 text-sm font-light hidden sm:inline">Gestiona · Juega · Compite</span>
+            <span className="hidden md:inline-block bg-white/10 text-white/90 text-xs px-3 py-1 rounded-full border border-white/15">
+              Desarrollado por <strong className="text-accent-300">Hamilton Quintero</strong>
+            </span>
           </div>
           <Link to="/login" className="btn-outline text-xs">Ingresar</Link>
         </div>
       </header>
+
 
       <main className="max-w-6xl mx-auto px-4 py-8">
         {isLoading && <p className="text-white/60 text-center py-12">Cargando torneos...</p>}
@@ -85,9 +89,15 @@ export default function PublicHomePage() {
         )}
       </main>
 
-      <footer className="bg-black/40 text-center py-3 border-t border-white/10">
-        <span className="text-white/40 text-xs">TRIBANDA — Vista pública</span>
+      <footer className="bg-black/60 text-center py-4 border-t border-white/10">
+        <div className="max-w-6xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs">
+          <span className="text-white/60">TRIBANDA — Sistema Oficial de Billar a Tres Bandas</span>
+          <span className="text-white/90 bg-white/10 px-3 py-1 rounded-full border border-white/10">
+            Creado y Desarrollado por <strong className="text-accent-300">Hamilton Quintero</strong>
+          </span>
+        </div>
       </footer>
     </div>
   );
 }
+

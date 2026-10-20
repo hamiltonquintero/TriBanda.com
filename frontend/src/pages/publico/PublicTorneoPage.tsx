@@ -50,10 +50,15 @@ export default function PublicTorneoPage() {
       {!modoProyector && (
         <header className="bg-black/50 backdrop-blur-sm border-b border-white/10 py-3">
           <div className="max-w-6xl mx-auto px-4 flex items-center justify-between">
-            <Link to="/publico" className="flex items-center gap-2">
-              <span className="text-xl font-heading font-extrabold text-white">TRIBANDA</span>
-              <span className="text-white/40 text-xs">Pantalla de Espectadores</span>
-            </Link>
+            <div className="flex items-center gap-3">
+              <Link to="/publico" className="flex items-center gap-2">
+                <span className="text-xl font-heading font-extrabold text-white">TRIBANDA</span>
+                <span className="text-white/40 text-xs">Pantalla de Espectadores</span>
+              </Link>
+              <span className="hidden md:inline-block bg-white/10 text-white/80 text-[11px] px-2.5 py-0.5 rounded-full border border-white/15">
+                Desarrollado por <strong className="text-emerald-400">Hamilton Quintero</strong>
+              </span>
+            </div>
             <div className="flex items-center gap-3">
               <button
                 onClick={() => setModoProyector(true)}
@@ -63,6 +68,7 @@ export default function PublicTorneoPage() {
                 <span className="material-icons text-xs align-middle mr-1">tv</span>
                 Modo Proyector / TV
               </button>
+
               <Link to="/login" className="btn-outline text-xs">Acceso Juez/Admin</Link>
             </div>
           </div>
@@ -352,10 +358,24 @@ export default function PublicTorneoPage() {
       </main>
 
       {!modoProyector && (
-        <footer className="bg-black/40 text-center py-3 border-t border-white/10">
-          <span className="text-white/40 text-xs">TRIBANDA — Sistema Oficial de Gestión de Torneos de Billar a Tres Bandas</span>
+        <footer className="bg-black/60 text-center py-4 border-t border-white/10 text-xs">
+          <div className="max-w-6xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
+            <span className="text-white/60">TRIBANDA — Sistema Oficial de Gestión de Torneos de Billar a Tres Bandas</span>
+            <span className="text-white/90 bg-white/10 px-3 py-1 rounded-full border border-white/15">
+              Creado y Desarrollado por <strong className="text-emerald-400">Hamilton Quintero</strong>
+            </span>
+          </div>
         </footer>
+      )}
+
+      {modoProyector && (
+        <div className="fixed bottom-3 right-4 text-xs text-white/80 bg-black/75 px-3.5 py-1.5 rounded-full border border-white/20 backdrop-blur-md shadow-lg z-50 flex items-center gap-2">
+          <span className="font-bold text-white tracking-wider">TRIBANDA</span>
+          <span className="text-white/40">•</span>
+          <span>Desarrollado por <strong className="text-emerald-400 font-bold">Hamilton Quintero</strong></span>
+        </div>
       )}
     </div>
   );
 }
+

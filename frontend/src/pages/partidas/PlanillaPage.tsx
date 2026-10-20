@@ -62,10 +62,13 @@ export default function PlanillaPage() {
       <div className="bg-white rounded-xl shadow p-5 mb-4">
         <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
           <div className="flex-1">
-            <div className="flex items-center gap-3 mb-3">
-              <h1 className="text-xl font-bold">Planilla Oficial de Partida</h1>
+            <div className="flex flex-wrap items-center gap-2 mb-3">
+              <h1 className="text-xl font-bold font-heading">Planilla Oficial de Partida</h1>
               <span className="text-xs bg-gray-100 text-gray-700 font-medium px-2.5 py-1 rounded-full">
                 Fase: <strong className="capitalize">{encabezado.fase.tipo}</strong>
+              </span>
+              <span className="text-[11px] bg-emerald-50 text-emerald-900 border border-emerald-200 font-medium px-2.5 py-1 rounded-full">
+                Desarrollado por <strong>Hamilton Quintero</strong>
               </span>
               {encabezado.modo_libre ? (
                 <span className="text-xs bg-emerald-100 text-emerald-800 font-semibold px-2.5 py-1 rounded-full">
@@ -77,6 +80,7 @@ export default function PlanillaPage() {
                 </span>
               ) : null}
             </div>
+
 
             {/* Fichas estilizadas de Jugador A y Jugador B */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-2">

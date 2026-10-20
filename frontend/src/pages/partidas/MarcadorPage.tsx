@@ -369,8 +369,17 @@ export default function MarcadorPage() {
         </div>
       )}
 
+      {/* Indicador de Marca Personal */}
+      <div className="flex items-center justify-between px-2 mb-2 text-xs text-white/70">
+        <span className="font-semibold tracking-wide">TRIBANDA — Marcador Oficial</span>
+        <span className="bg-black/30 backdrop-blur-sm px-3 py-0.5 rounded-full border border-white/10 text-[11px]">
+          Desarrollado por <strong className="text-emerald-400">Hamilton Quintero</strong>
+        </span>
+      </div>
+
       {/* Marcador principal con bolas y protocolo visual */}
       <div className="rounded-2xl p-6 mb-4 shadow-xl" style={{ background: 'linear-gradient(135deg, #1B5E20 0%, #2E7D32 60%, #1a4a1a 100%)' }}>
+
         <div className="grid grid-cols-3 gap-4 items-center text-center text-white">
           {/* Jugador A */}
           <div className="relative">
