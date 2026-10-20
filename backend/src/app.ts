@@ -67,7 +67,8 @@ const loginLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '15mb' }));
+app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 
 // ─── RUTAS ───────────────────────────────────────────────────────────────────
 

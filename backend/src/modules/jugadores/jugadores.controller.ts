@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import * as svc from './jugadores.service';
-import { crearJugadorSchema, editarJugadorSchema, crearClubSchema } from './jugadores.schema';
+import { crearJugadorSchema, editarJugadorSchema, crearClubSchema, importarJugadoresMasivoSchema } from './jugadores.schema';
 
 // ─── CLUBES ──────────────────────────────────────────────────────────────────
 
@@ -36,6 +36,14 @@ export async function crearJugador(req: Request, res: Response, next: NextFuncti
   try {
     const data = crearJugadorSchema.parse(req.body);
     res.status(201).json(await svc.crearJugador(data));
+  } catch (err) { next(err); }
+}
+
+export async function importarJugadoresMasivo(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { jugadores } = importarJugadoresMasivoSchema.parse(req.body);
+    const resultado = await svc.importarJugadoresMasivo(jugadores);
+    res.status(200).json(resultado);
   } catch (err) { next(err); }
 }
 

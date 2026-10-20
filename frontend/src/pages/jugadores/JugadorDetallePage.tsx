@@ -19,14 +19,33 @@ export default function JugadorDetallePage() {
 
   return (
     <div className="max-w-3xl mx-auto space-y-4">
-      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
-        <div>
-          <Link to="/jugadores" className="text-sm text-primary-600 hover:underline">← Volver</Link>
-          <h1 className="text-2xl font-bold mt-1">{j.nombre_completo}</h1>
-          {j.alias && <p className="text-sm text-gray-500 italic">"{j.alias}"</p>}
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 bg-white p-5 rounded-2xl shadow-sm border border-gray-200">
+        <div className="flex items-center gap-4">
+          {j.foto_url ? (
+            <img
+              src={j.foto_url}
+              alt={j.nombre_completo}
+              className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl object-cover border-2 border-primary-500 shadow-sm"
+            />
+          ) : (
+            <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-primary-100 text-primary-800 flex items-center justify-center font-bold text-2xl border border-primary-200">
+              {j.nombre_completo.charAt(0).toUpperCase()}
+            </div>
+          )}
+          <div>
+            <Link to="/jugadores" className="text-xs text-primary-600 hover:underline flex items-center gap-1 mb-1">
+              <span className="material-icons text-xs">arrow_back</span>
+              Volver al Directorio
+            </Link>
+            <h1 className="text-2xl font-bold text-gray-900">{j.nombre_completo}</h1>
+            {j.alias && <p className="text-sm text-gray-500 italic">"{j.alias}"</p>}
+          </div>
         </div>
         {hasRole('admin') && (
-          <Link to={`/jugadores/${j.id}/editar`} className="btn-secondary text-sm self-start">Editar</Link>
+          <Link to={`/jugadores/${j.id}/editar`} className="btn-primary text-xs flex items-center gap-1 self-start sm:self-center">
+            <span className="material-icons text-sm">edit</span>
+            Editar Jugador
+          </Link>
         )}
       </div>
 

@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import api from '../../services/api';
 import { Club } from '../../types';
+import FotoUpload from '../../components/FotoUpload';
 
 const schema = z.object({
   nombre: z.string().min(2, 'Nombre requerido'),
@@ -23,12 +24,13 @@ type Form = z.infer<typeof schema>;
 
 export default function NuevoJugadorPage() {
   const navigate = useNavigate();
-  const { data: clubes = [] } = useQuery<Club[]>({
+  const { data: rawClubes = [] } = useQuery<Club[]>({
     queryKey: ['clubes'],
-    queryFn: () => api.get('/jugadores/clubes').then((r) => r.data),
+    queryFn: () => api.get('/jugadores/clubes').then((r) => (Array.isArray(r.data) ? r.data : [])),
   });
+  const clubes = Array.isArray(rawClubes) ? rawClubes : [];
 
-  const { register, handleSubmit, formState: { errors, isSubmitting }, setError } = useForm<Form>({
+  const { register, handleSubmit, watch, setValue, formState: { errors, isSubmitting }, setError } = useForm<Form>({
     resolver: zodResolver(schema),
     defaultValues: { pais: 'Colombia' },
   });
@@ -116,15 +118,15 @@ export default function NuevoJugadorPage() {
         {/* Categoría */}
         <div>
           <label className="label">Categoría / Handicap</label>
-          <input {...register('categoria')} className="input" placeholder="Ej: A, B, C o libre" />
+          <input {...register('categoria')} className="input" placeholder="Ej: Primera, Segunda, Tercera o libre" />
         </div>
 
-        {/* Foto URL */}
-        <div>
-          <label className="label">URL de foto</label>
-          <input {...register('foto_url')} className="input" placeholder="https://..." />
-          <p className="text-xs text-gray-400 mt-1">Enlace a la foto del jugador (opcional)</p>
-        </div>
+        {/* Foto (Opción 3: Carga directa o enlace) */}
+        <FotoUpload
+          value={watch('foto_url')}
+          onChange={(url) => setValue('foto_url', url, { shouldDirty: true })}
+          nombreJugador={`${watch('nombre') || ''} ${watch('apellido') || ''}`.trim()}
+        />
 
         {errors.root && <p className="error text-center">{errors.root.message}</p>}
 

@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import api from '../../services/api';
 import { Jugador } from '../../types';
 import { useAuthStore } from '../../store/authStore';
+import ModalImportarExcel from '../../components/ModalImportarExcel';
 
 export default function JugadoresPage() {
   const { hasRole } = useAuthStore();
@@ -11,8 +12,9 @@ export default function JugadoresPage() {
   const [soloActivos, setSoloActivos] = useState(true);
   const [buscar, setBuscar] = useState('');
   const [vista, setVista] = useState<'tarjetas' | 'tabla'>('tabla');
+  const [mostrarModalImportar, setMostrarModalImportar] = useState(false);
 
-  const { data: jugadores = [], isLoading } = useQuery<Jugador[]>({
+  const { data: rawJugadores = [], isLoading } = useQuery<Jugador[]>({
     queryKey: ['jugadores', soloActivos, buscar],
     queryFn: () =>
       api.get('/jugadores', {
@@ -20,8 +22,10 @@ export default function JugadoresPage() {
           activo: soloActivos,
           ...(buscar && { buscar }),
         },
-      }).then((r) => r.data),
+      }).then((r) => (Array.isArray(r.data) ? r.data : [])),
   });
+
+  const jugadores = Array.isArray(rawJugadores) ? rawJugadores : [];
 
   const desactivar = useMutation({
     mutationFn: (id: string) => api.patch(`/jugadores/${id}/desactivar`),
@@ -148,10 +152,22 @@ export default function JugadoresPage() {
           )}
 
           {hasRole('admin') && (
-            <Link to="/jugadores/nuevo" className="btn-primary text-xs flex items-center gap-1">
-              <span className="material-icons text-sm">person_add</span>
-              Registrar Jugador
-            </Link>
+            <>
+              <button
+                type="button"
+                onClick={() => setMostrarModalImportar(true)}
+                className="btn-outline text-xs bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100 flex items-center gap-1.5 shadow-2xs font-semibold"
+                title="Cargar jugadores de forma masiva desde una hoja de cálculo Excel o CSV"
+              >
+                <span className="material-icons text-sm text-emerald-700">file_upload</span>
+                Importar Excel / CSV
+              </button>
+
+              <Link to="/jugadores/nuevo" className="btn-primary text-xs flex items-center gap-1">
+                <span className="material-icons text-sm">person_add</span>
+                Registrar Jugador
+              </Link>
+            </>
           )}
         </div>
       </div>
@@ -255,13 +271,28 @@ export default function JugadoresPage() {
                   <tr key={j.id} className="hover:bg-gray-50 transition">
                     <td className="text-center font-bold text-gray-400">{idx + 1}</td>
                     <td>
-                      <Link
-                        to={`/publico/jugador/${j.id}`}
-                        className="font-semibold text-gray-900 hover:text-primary-600"
-                      >
-                        {j.nombre_completo}
-                      </Link>
-                      {j.alias && <span className="text-gray-400 italic ml-1">"{j.alias}"</span>}
+                      <div className="flex items-center gap-2">
+                        {j.foto_url ? (
+                          <img
+                            src={j.foto_url}
+                            alt={j.nombre_completo}
+                            className="w-7 h-7 rounded-full object-cover border border-primary-400 flex-shrink-0 shadow-2xs"
+                          />
+                        ) : (
+                          <div className="w-7 h-7 rounded-full bg-primary-100 text-primary-800 flex items-center justify-center font-bold text-[10px] border border-primary-200 flex-shrink-0">
+                            {j.nombre_completo.charAt(0).toUpperCase()}
+                          </div>
+                        )}
+                        <div className="min-w-0">
+                          <Link
+                            to={`/publico/jugador/${j.id}`}
+                            className="font-semibold text-gray-900 hover:text-primary-600 block truncate"
+                          >
+                            {j.nombre_completo}
+                          </Link>
+                          {j.alias && <span className="text-gray-400 italic text-[11px] block truncate">"{j.alias}"</span>}
+                        </div>
+                      </div>
                     </td>
                     <td className="text-gray-600">{j.club?.nombre ?? j.club_ciudad}</td>
                     <td className="text-gray-500 font-mono text-[11px]">{j.cedula || '-'}</td>
@@ -321,9 +352,17 @@ export default function JugadoresPage() {
           {jugadores.map((j) => (
             <div key={j.id} className="bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition p-4">
               <div className="flex items-center gap-3 mb-3">
-                <div className="w-12 h-12 rounded-full bg-primary-50 text-primary-700 flex items-center justify-center font-bold text-lg border border-primary-200 flex-shrink-0">
-                  {j.nombre_completo.charAt(0).toUpperCase()}
-                </div>
+                {j.foto_url ? (
+                  <img
+                    src={j.foto_url}
+                    alt={j.nombre_completo}
+                    className="w-12 h-12 rounded-full object-cover border-2 border-primary-500 shadow-xs flex-shrink-0"
+                  />
+                ) : (
+                  <div className="w-12 h-12 rounded-full bg-primary-50 text-primary-700 flex items-center justify-center font-bold text-lg border border-primary-200 flex-shrink-0">
+                    {j.nombre_completo.charAt(0).toUpperCase()}
+                  </div>
+                )}
                 <div className="min-w-0">
                   <Link
                     to={`/publico/jugador/${j.id}`}
@@ -376,6 +415,15 @@ export default function JugadoresPage() {
           ))}
         </div>
       )}
+
+      {/* Modal para Importar Excel / CSV */}
+      <ModalImportarExcel
+        isOpen={mostrarModalImportar}
+        onClose={() => setMostrarModalImportar(false)}
+        onSuccess={() => {
+          qc.invalidateQueries({ queryKey: ['jugadores'] });
+        }}
+      />
     </div>
   );
 }

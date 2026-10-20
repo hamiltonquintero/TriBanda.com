@@ -6,6 +6,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import api from '../../services/api';
 import { Club, Jugador } from '../../types';
+import FotoUpload from '../../components/FotoUpload';
 
 const schema = z.object({
   nombre: z.string().min(2, 'Nombre requerido'),
@@ -27,10 +28,11 @@ export default function EditarJugadorPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
-  const { data: clubes = [] } = useQuery<Club[]>({
+  const { data: rawClubes = [] } = useQuery<Club[]>({
     queryKey: ['clubes'],
-    queryFn: () => api.get('/jugadores/clubes').then((r) => r.data),
+    queryFn: () => api.get('/jugadores/clubes').then((r) => (Array.isArray(r.data) ? r.data : [])),
   });
+  const clubes = Array.isArray(rawClubes) ? rawClubes : [];
 
   const { data: jugador, isLoading } = useQuery<Jugador>({
     queryKey: ['jugador', id],
@@ -38,7 +40,7 @@ export default function EditarJugadorPage() {
     enabled: !!id,
   });
 
-  const { register, handleSubmit, reset, formState: { errors, isSubmitting }, setError } = useForm<Form>({
+  const { register, handleSubmit, reset, watch, setValue, formState: { errors, isSubmitting }, setError } = useForm<Form>({
     resolver: zodResolver(schema),
     defaultValues: { activo: true },
   });
@@ -145,10 +147,12 @@ export default function EditarJugadorPage() {
           <input {...register('categoria')} className="input" />
         </div>
 
-        <div>
-          <label className="label">URL de foto</label>
-          <input {...register('foto_url')} className="input" />
-        </div>
+        {/* Foto (Opción 3: Carga directa o enlace) */}
+        <FotoUpload
+          value={watch('foto_url')}
+          onChange={(url) => setValue('foto_url', url, { shouldDirty: true })}
+          nombreJugador={`${watch('nombre') || ''} ${watch('apellido') || ''}`.trim()}
+        />
 
         <label className="flex items-center gap-2 text-sm text-gray-700">
           <input type="checkbox" {...register('activo')} />
