@@ -60,7 +60,8 @@ export default function MarcadorPage() {
   const { data: marcador, isLoading } = useQuery<MarcadorData>({
     queryKey: ['marcador', id],
     queryFn: () => api.get(`/partidas/marcador/${id}`).then((r) => r.data),
-    refetchInterval: 2000,
+    refetchInterval: 4000,
+    staleTime: 2000,
   });
 
   const { data: listaJueces = [] } = useQuery<{ id: string; nombre: string; rol?: string }[]>({
@@ -128,28 +129,160 @@ export default function MarcadorPage() {
   const sumar = useMutation({
     mutationFn: (data: { jugador_id: string; set_numero: number }) =>
       api.post(`/partidas/${id}/marcador`, { ...data, accion: 'sumar' }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['marcador', id] }),
+    onMutate: async (vars) => {
+      await qc.cancelQueries({ queryKey: ['marcador', id] });
+      const previo = qc.getQueryData<MarcadorData>(['marcador', id]);
+      if (!previo) return { previo };
+
+      const esA = vars.jugador_id === previo.jugador_a.id;
+      const sets = previo.sets.map((s) => {
+        if (s.numero !== vars.set_numero) return s;
+        return {
+          ...s,
+          carambolas_a: esA ? s.carambolas_a + 1 : s.carambolas_a,
+          carambolas_b: !esA ? s.carambolas_b + 1 : s.carambolas_b,
+        };
+      });
+
+      const totalCarA = sets.reduce((acc, s) => acc + s.carambolas_a, 0);
+      const totalCarB = sets.reduce((acc, s) => acc + s.carambolas_b, 0);
+      const entA = previo.resumen.entradas_a;
+      const entB = previo.resumen.entradas_b;
+
+      const optimistic: MarcadorData = {
+        ...previo,
+        sets,
+        resumen: {
+          ...previo.resumen,
+          carambolas_a: totalCarA,
+          carambolas_b: totalCarB,
+          promedio_a: entA > 0 ? Math.round((totalCarA / entA) * 1000) / 1000 : 0,
+          promedio_b: entB > 0 ? Math.round((totalCarB / entB) * 1000) / 1000 : 0,
+        },
+      };
+
+      qc.setQueryData<MarcadorData>(['marcador', id], optimistic);
+      return { previo };
+    },
+    onSuccess: (res) => {
+      if (res?.data) {
+        qc.setQueryData(['marcador', id], res.data);
+      }
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previo) {
+        qc.setQueryData(['marcador', id], context.previo);
+      }
+    },
   });
 
   const restar = useMutation({
     mutationFn: (data: { jugador_id: string; set_numero: number }) =>
       api.post(`/partidas/${id}/marcador`, { ...data, accion: 'restar' }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['marcador', id] }),
+    onMutate: async (vars) => {
+      await qc.cancelQueries({ queryKey: ['marcador', id] });
+      const previo = qc.getQueryData<MarcadorData>(['marcador', id]);
+      if (!previo) return { previo };
+
+      const esA = vars.jugador_id === previo.jugador_a.id;
+      const sets = previo.sets.map((s) => {
+        if (s.numero !== vars.set_numero) return s;
+        return {
+          ...s,
+          carambolas_a: esA ? Math.max(0, s.carambolas_a - 1) : s.carambolas_a,
+          carambolas_b: !esA ? Math.max(0, s.carambolas_b - 1) : s.carambolas_b,
+        };
+      });
+
+      const totalCarA = sets.reduce((acc, s) => acc + s.carambolas_a, 0);
+      const totalCarB = sets.reduce((acc, s) => acc + s.carambolas_b, 0);
+      const entA = previo.resumen.entradas_a;
+      const entB = previo.resumen.entradas_b;
+
+      const optimistic: MarcadorData = {
+        ...previo,
+        sets,
+        resumen: {
+          ...previo.resumen,
+          carambolas_a: totalCarA,
+          carambolas_b: totalCarB,
+          promedio_a: entA > 0 ? Math.round((totalCarA / entA) * 1000) / 1000 : 0,
+          promedio_b: entB > 0 ? Math.round((totalCarB / entB) * 1000) / 1000 : 0,
+        },
+      };
+
+      qc.setQueryData<MarcadorData>(['marcador', id], optimistic);
+      return { previo };
+    },
+    onSuccess: (res) => {
+      if (res?.data) {
+        qc.setQueryData(['marcador', id], res.data);
+      }
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previo) {
+        qc.setQueryData(['marcador', id], context.previo);
+      }
+    },
   });
 
   const turno = useMutation({
     mutationFn: (set_numero: number) => api.post(`/partidas/${id}/turno`, { set_numero }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['marcador', id] }),
+    onMutate: async (set_numero) => {
+      await qc.cancelQueries({ queryKey: ['marcador', id] });
+      const previo = qc.getQueryData<MarcadorData>(['marcador', id]);
+      if (!previo) return { previo };
+
+      const sets = previo.sets.map((s) => {
+        if (s.numero !== set_numero) return s;
+        return {
+          ...s,
+          entradas_a: s.entradas_a + 1,
+          entradas_b: s.entradas_b + 1,
+        };
+      });
+
+      const optimistic: MarcadorData = {
+        ...previo,
+        sets,
+        resumen: {
+          ...previo.resumen,
+          entradas_a: previo.resumen.entradas_a + 1,
+          entradas_b: previo.resumen.entradas_b + 1,
+        },
+      };
+
+      qc.setQueryData<MarcadorData>(['marcador', id], optimistic);
+      return { previo };
+    },
+    onSuccess: (res) => {
+      if (res?.data) {
+        qc.setQueryData(['marcador', id], res.data);
+      }
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previo) {
+        qc.setQueryData(['marcador', id], context.previo);
+      }
+    },
   });
 
   const finSet = useMutation({
     mutationFn: (set_numero: number) => api.patch(`/partidas/${id}/set/${set_numero}/finalizar`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['marcador', id] }),
+    onSuccess: (res) => {
+      if (res?.data) qc.setQueryData(['marcador', id], res.data);
+      else qc.invalidateQueries({ queryKey: ['marcador', id] });
+    },
   });
 
   const confirmar = useMutation({
     mutationFn: () => api.patch(`/partidas/${id}/confirmar`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['marcador', id] }),
+    onSuccess: (res) => {
+      if (res?.data) qc.setQueryData(['marcador', id], res.data);
+      else qc.invalidateQueries({ queryKey: ['marcador', id] });
+      qc.invalidateQueries({ queryKey: ['planilla', id] });
+      qc.invalidateQueries({ queryKey: ['partidas'] });
+    },
   });
 
   if (isLoading || !marcador) return <p className="text-gray-500 p-6">Cargando marcador...</p>;

@@ -301,12 +301,22 @@ export async function marcadorAccion(
     });
   }
 
+  // Calcular totales para verificación de victoria sin queries adicionales
+  const delta = data.accion === 'sumar' ? 1 : -1;
+  let totalA = 0;
+  let totalB = 0;
+  for (const e of set.entradas) {
+    const car = e.id === entradaActual?.id ? Math.max(0, e.carambolas + delta) : e.carambolas;
+    if (e.jugador_id === partida.jugador_a_id) totalA += car;
+    else if (e.jugador_id === partida.jugador_b_id) totalB += car;
+  }
+  if (!entradaActual) {
+    if (data.jugador_id === partida.jugador_a_id) totalA += 1;
+    else totalB += 1;
+  }
+
   // Verificar victoria por handicap (meta de carambolas)
   if (partida.meta_a || partida.meta_b) {
-    const allEntradas = await prisma.entradaSet.findMany({ where: { set_id: set.id } });
-    const totalA = allEntradas.filter((e) => e.jugador_id === partida.jugador_a_id).reduce((a, e) => a + e.carambolas, 0);
-    const totalB = allEntradas.filter((e) => e.jugador_id === partida.jugador_b_id).reduce((a, e) => a + e.carambolas, 0);
-
     const metaA = partida.meta_a ?? 999;
     const metaB = partida.meta_b ?? 999;
 
