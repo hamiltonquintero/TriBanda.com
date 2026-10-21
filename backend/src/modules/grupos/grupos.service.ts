@@ -282,12 +282,20 @@ export async function generarPartidasFase(fase_id: string) {
   });
 
   if (!fase) throw new Error('Fase no encontrada');
+  if (!fase.grupos || fase.grupos.length === 0) {
+    throw new Error('Esta fase no tiene grupos creados. Ve a la sección de Grupos y realiza el sorteo o crea grupos primero.');
+  }
 
-  const totalSets = fase.torneo.modalidad === 'profesional' ? (fase.torneo.total_sets_default || 3) : 1;
+  const gruposConJugadores = fase.grupos.filter((g) => g.jugadores && g.jugadores.length >= 2);
+  if (gruposConJugadores.length === 0) {
+    throw new Error('Los grupos aún no tienen suficientes jugadores asignados (mínimo 2 por grupo). Realiza el sorteo de mesas primero.');
+  }
+
+  const totalSets = Math.max(1, Math.round(Number(fase.torneo.modalidad === 'profesional' ? (fase.torneo.total_sets_default || 3) : 1)));
   const setsCreate = Array.from({ length: totalSets }, (_, k) => ({ numero: k + 1 }));
 
-  let defaultMeta = fase.torneo.meta_base || 30;
-  let esModoLibre = fase.torneo.modo_libre;
+  let defaultMeta = Math.round(Number(fase.torneo.meta_base || 30));
+  let esModoLibre = Boolean(fase.torneo.modo_libre);
 
   if (fase.torneo.modalidad === 'relampago') {
     defaultMeta = fase.torneo.distancia_relampago === 'corto' ? 10 : 18;
@@ -299,12 +307,18 @@ export async function generarPartidasFase(fase_id: string) {
     where: { torneo_id: fase.torneo_id },
   });
   const metaMap = new Map<string, number>();
-  inscripciones.forEach((i) => metaMap.set(i.jugador_id, i.meta_puntos));
+  inscripciones.forEach((i) => {
+    if (i.jugador_id && i.meta_puntos) {
+      metaMap.set(i.jugador_id, Math.round(Number(i.meta_puntos)));
+    }
+  });
 
   const partidasCreadas = [];
 
   for (const grupo of fase.grupos) {
-    const jugadores = grupo.jugadores.map((gj) => gj.jugador);
+    const jugadores = (grupo.jugadores || [])
+      .map((gj) => gj.jugador)
+      .filter((j): j is NonNullable<typeof j> => Boolean(j && j.id));
     if (jugadores.length < 2) continue;
 
     // Verificar si ya hay partidas creadas en el grupo
@@ -314,15 +328,13 @@ export async function generarPartidasFase(fase_id: string) {
 
     if (existentes.length > 0) continue; // ya tiene partidas generadas
 
-    // Round-robin (todos contra todos)
-    // Para grupos de 3:
-    // 0 vs 1 -> Partida 1 (Ronda inicial)
-    // 0 vs 2 -> Partida 2
-    // 1 vs 2 -> Partida 3
     for (let i = 0; i < jugadores.length; i++) {
       for (let j = i + 1; j < jugadores.length; j++) {
-        const metaA = metaMap.get(jugadores[i].id) ?? defaultMeta;
-        const metaB = metaMap.get(jugadores[j].id) ?? defaultMeta;
+        const metaA = Math.round(Number(metaMap.get(jugadores[i].id) ?? defaultMeta)) || 30;
+        const metaB = Math.round(Number(metaMap.get(jugadores[j].id) ?? defaultMeta)) || 30;
+        const limiteEntradas = esModoLibre
+          ? null
+          : (fase.torneo.limite_entradas ? Math.round(Number(fase.torneo.limite_entradas)) : null);
 
         const partida = await prisma.partida.create({
           data: {
@@ -333,7 +345,7 @@ export async function generarPartidasFase(fase_id: string) {
             total_sets: totalSets,
             meta_a: metaA,
             meta_b: metaB,
-            limite_entradas: esModoLibre ? null : fase.torneo.limite_entradas,
+            limite_entradas: limiteEntradas,
             modo_libre: esModoLibre,
             estado: 'pendiente',
             sets: {
@@ -709,14 +721,16 @@ export async function generarPartidasGrupo(grupo_id: string) {
   if (!grupo) throw new Error('Grupo no encontrado');
   if (grupo.partidas.length > 0) throw new Error('Este grupo ya tiene partidas generadas');
 
-  const jugadores = grupo.jugadores.map((gj) => gj.jugador);
+  const jugadores = (grupo.jugadores || [])
+    .map((gj) => gj.jugador)
+    .filter((j): j is NonNullable<typeof j> => Boolean(j && j.id));
   if (jugadores.length < 2) throw new Error('Se necesitan al menos 2 jugadores para generar partidas');
 
-  const totalSets = grupo.fase.torneo.modalidad === 'profesional' ? (grupo.fase.torneo.total_sets_default || 3) : 1;
+  const totalSets = Math.max(1, Math.round(Number(grupo.fase.torneo.modalidad === 'profesional' ? (grupo.fase.torneo.total_sets_default || 3) : 1)));
   const setsCreate = Array.from({ length: totalSets }, (_, k) => ({ numero: k + 1 }));
 
-  let defaultMeta = grupo.fase.torneo.meta_base || 30;
-  let esModoLibre = grupo.fase.torneo.modo_libre;
+  let defaultMeta = Math.round(Number(grupo.fase.torneo.meta_base || 30));
+  let esModoLibre = Boolean(grupo.fase.torneo.modo_libre);
   if (grupo.fase.torneo.modalidad === 'relampago') {
     defaultMeta = grupo.fase.torneo.distancia_relampago === 'corto' ? 10 : 18;
     esModoLibre = true;
@@ -726,13 +740,20 @@ export async function generarPartidasGrupo(grupo_id: string) {
     where: { torneo_id: grupo.fase.torneo_id },
   });
   const metaMap = new Map<string, number>();
-  inscripciones.forEach((i) => metaMap.set(i.jugador_id, i.meta_puntos));
+  inscripciones.forEach((i) => {
+    if (i.jugador_id && i.meta_puntos) {
+      metaMap.set(i.jugador_id, Math.round(Number(i.meta_puntos)));
+    }
+  });
 
   const partidasCreadas = [];
   for (let i = 0; i < jugadores.length; i++) {
     for (let j = i + 1; j < jugadores.length; j++) {
-      const metaA = metaMap.get(jugadores[i].id) ?? defaultMeta;
-      const metaB = metaMap.get(jugadores[j].id) ?? defaultMeta;
+      const metaA = Math.round(Number(metaMap.get(jugadores[i].id) ?? defaultMeta)) || 30;
+      const metaB = Math.round(Number(metaMap.get(jugadores[j].id) ?? defaultMeta)) || 30;
+      const limiteEntradas = esModoLibre
+        ? null
+        : (grupo.fase.torneo.limite_entradas ? Math.round(Number(grupo.fase.torneo.limite_entradas)) : null);
 
       const partida = await prisma.partida.create({
         data: {
@@ -743,7 +764,7 @@ export async function generarPartidasGrupo(grupo_id: string) {
           total_sets: totalSets,
           meta_a: metaA,
           meta_b: metaB,
-          limite_entradas: esModoLibre ? null : grupo.fase.torneo.limite_entradas,
+          limite_entradas: limiteEntradas,
           modo_libre: esModoLibre,
           estado: 'pendiente',
           sets: { create: setsCreate },

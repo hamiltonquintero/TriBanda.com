@@ -113,11 +113,14 @@ app.delete('/api/v1/admin/reset', authGuard, roleGuard('admin'), async (req, res
   } catch (err) { next(err); }
 });
 
+import { sincronizarEsquemaBD } from './config/schemaSync';
+
 // Error handler (siempre al final)
 app.use(errorHandler);
 
-app.listen(env.PORT, () => {
+app.listen(env.PORT, async () => {
   console.log(`Servidor corriendo en http://localhost:${env.PORT} [${process.env.NODE_ENV}]`);
+  await sincronizarEsquemaBD();
 });
 
 export default app;
