@@ -85,8 +85,8 @@ async function calcularGanadorPartida(partida_id: string): Promise<string | null
   const setsA = partida.sets.filter((s) => s.ganador_id === jugador_a_id).length;
   const setsB = partida.sets.filter((s) => s.ganador_id === jugador_b_id).length;
 
-  // Para ganar: mayoría de sets (2 de 3, 1 de 1, 2 de 2)
-  const setsParaGanar = Math.ceil(partida.total_sets / 2);
+  // Para ganar: mayoría estricta de sets (2 de 3, 1 de 1, 2 de 2, 3 de 5)
+  const setsParaGanar = Math.floor(partida.total_sets / 2) + 1;
 
   if (setsA >= setsParaGanar || setsB >= setsParaGanar) {
     const ganador_id = setsA >= setsParaGanar ? jugador_a_id : jugador_b_id;
@@ -207,13 +207,24 @@ export async function iniciarPartida(
   },
   juez_id?: string
 ) {
-  const partida = await prisma.partida.findUnique({ where: { id } });
+  const partida = await prisma.partida.findUnique({ where: { id }, include: { sets: { select: { numero: true } } } });
   if (!partida) throw new Error('Partida no encontrada');
   if (partida.estado !== 'pendiente') throw new Error('La partida ya fue iniciada o finalizada');
 
-  const setsData = Array.from({ length: partida.total_sets }, (_, i) => ({
-    partida_id: id, numero: i + 1,
-  }));
+  const salidaInicial = opciones?.jugador_salida_id || partida.jugador_salida_id || partida.jugador_a_id;
+  const contraInicial = salidaInicial === partida.jugador_a_id ? partida.jugador_b_id : partida.jugador_a_id;
+
+  // Solo crear los sets que aún no existen (grupos y llaves ya los crean al generarse)
+  const numerosExistentes = new Set(partida.sets.map((s) => s.numero));
+  const setsData = Array.from({ length: partida.total_sets }, (_, i) => {
+    const num = i + 1;
+    const turnoSalida = num % 2 === 1 ? salidaInicial : contraInicial;
+    return {
+      partida_id: id,
+      numero: num,
+      turno_jugador_id: turnoSalida,
+    };
+  }).filter((s) => !numerosExistentes.has(s.numero));
 
   const updateData: any = { estado: 'en_curso' };
 
@@ -252,8 +263,30 @@ export async function iniciarPartida(
 
   await prisma.$transaction([
     prisma.partida.update({ where: { id }, data: updateData }),
-    prisma.set.createMany({ data: setsData }),
+    ...(setsData.length > 0 ? [prisma.set.createMany({ data: setsData })] : []),
   ]);
+
+  // Asegurar que el Set 1 tenga turno_jugador_id seteado a la salida inicial
+  await prisma.set.updateMany({
+    where: { partida_id: id, numero: 1 },
+    data: { turno_jugador_id: salidaInicial },
+  });
+
+  // Asegurar entrada 1 con 0 carambolas para el jugador que inicia
+  const set1 = await prisma.set.findFirst({
+    where: { partida_id: id, numero: 1 },
+    include: { entradas: true },
+  });
+  if (set1 && set1.entradas.length === 0) {
+    await prisma.entradaSet.create({
+      data: {
+        set_id: set1.id,
+        jugador_id: salidaInicial,
+        numero_entrada: 1,
+        carambolas: 0,
+      },
+    });
+  }
 
   return obtenerPartida(id);
 }
@@ -301,6 +334,20 @@ export async function registrarEntrada(
   return obtenerPartida(partida_id);
 }
 
+// ─── TURNOS Y ENTRADAS (REGLAMENTARIO) ───────────────────────────────────────
+
+export function resolverSalidaYContraSet(
+  partida: { jugador_a_id: string; jugador_b_id: string; jugador_salida_id: string | null },
+  setNumero: number
+) {
+  const lagWinnerId = partida.jugador_salida_id || partida.jugador_a_id;
+  const salidaId = setNumero % 2 === 1
+    ? lagWinnerId
+    : (lagWinnerId === partida.jugador_a_id ? partida.jugador_b_id : partida.jugador_a_id);
+  const contraId = salidaId === partida.jugador_a_id ? partida.jugador_b_id : partida.jugador_a_id;
+  return { salidaId, contraId };
+}
+
 // ─── MARCADOR DIGITAL: +1 / -1 carambola ────────────────────────────────────
 
 export async function marcadorAccion(
@@ -308,55 +355,75 @@ export async function marcadorAccion(
   data: { jugador_id: string; accion: 'sumar' | 'restar'; set_numero: number }
 ) {
   const partida = await prisma.partida.findUnique({
-    where: { id: partida_id }, include: { sets: { include: { entradas: true } } },
+    where: { id: partida_id },
+    include: { sets: { include: { entradas: true } } },
   });
   if (!partida) throw new Error('Partida no encontrada');
   if (partida.estado !== 'en_curso') throw new Error('La partida no está en curso');
+  if (data.jugador_id !== partida.jugador_a_id && data.jugador_id !== partida.jugador_b_id) {
+    throw new Error('El jugador no pertenece a esta partida');
+  }
 
   const set = partida.sets.find((s) => s.numero === data.set_numero);
   if (!set) throw new Error(`Set ${data.set_numero} no encontrado`);
+  if (set.ganador_id) throw new Error(`El set ${data.set_numero} ya está finalizado`);
 
-  // Buscar la entrada actual del jugador (la última)
+  const { salidaId, contraId } = resolverSalidaYContraSet(partida, set.numero);
+  const turnoActualId = set.turno_jugador_id || salidaId;
+
+  // REGLA 1 & 2: El espacio del jugador fuera de turno queda TOTALMENTE BLOQUEADO
+  if (data.jugador_id !== turnoActualId) {
+    throw new Error('No es el turno de este jugador. El juez debe autorizar el cambio de turno primero.');
+  }
+
+  // REGLA 3: Verificar si el set ya alcanzó el límite reglamentario de entradas o está en desempate
+  const limiteEntradas = partida.modo_libre ? null : (partida.limite_entradas ?? null);
+  const entradasSalida = set.entradas.filter((e) => e.jugador_id === salidaId);
+  const entradasContra = set.entradas.filter((e) => e.jugador_id === contraId);
+
+  const sumaA = set.entradas.filter((e) => e.jugador_id === partida.jugador_a_id).reduce((acc, e) => acc + e.carambolas, 0);
+  const sumaB = set.entradas.filter((e) => e.jugador_id === partida.jugador_b_id).reduce((acc, e) => acc + e.carambolas, 0);
+  const { es_empate } = evaluarResultadoSet(sumaA, sumaB, partida.meta_a, partida.meta_b);
+
+  if (limiteEntradas && entradasSalida.length >= limiteEntradas && entradasContra.length >= limiteEntradas) {
+    throw new Error('Se ha completado el límite reglamentario de entradas. Debe definirse el set o la Carambola de Oro.');
+  }
+
+  if (es_empate && limiteEntradas && entradasSalida.length >= limiteEntradas && entradasContra.length >= limiteEntradas) {
+    throw new Error('El set se encuentra en desempate por Carambola de Oro. No se pueden modificar carambolas.');
+  }
+
+  // Buscar la última entrada del jugador en turno
   const entradasJugador = set.entradas
     .filter((e) => e.jugador_id === data.jugador_id)
     .sort((a, b) => b.numero_entrada - a.numero_entrada);
-
-  const entradaActual = entradasJugador[0];
+  let entradaActual = entradasJugador[0];
 
   if (!entradaActual) {
     if (data.accion === 'restar') throw new Error('No hay carambolas para restar');
-    await prisma.entradaSet.create({
+    entradaActual = await prisma.entradaSet.create({
       data: { set_id: set.id, jugador_id: data.jugador_id, numero_entrada: 1, carambolas: 1 },
     });
   } else {
     const nuevas = data.accion === 'sumar'
       ? entradaActual.carambolas + 1
       : Math.max(0, entradaActual.carambolas - 1);
-    await prisma.entradaSet.update({
-      where: { id: entradaActual.id },
-      data: { carambolas: nuevas },
-    });
+    if (nuevas !== entradaActual.carambolas) {
+      await prisma.entradaSet.update({ where: { id: entradaActual.id }, data: { carambolas: nuevas } });
+      entradaActual.carambolas = nuevas;
+    }
   }
 
-  // Calcular totales para verificación de victoria sin queries adicionales
-  const delta = data.accion === 'sumar' ? 1 : -1;
-  let totalA = 0;
-  let totalB = 0;
-  for (const e of set.entradas) {
-    const car = e.id === entradaActual?.id ? Math.max(0, e.carambolas + delta) : e.carambolas;
-    if (e.jugador_id === partida.jugador_a_id) totalA += car;
-    else if (e.jugador_id === partida.jugador_b_id) totalB += car;
-  }
-  if (!entradaActual) {
-    if (data.jugador_id === partida.jugador_a_id) totalA += 1;
-    else totalB += 1;
-  }
+  // Verificar si con esta carambola se alcanza la meta de handicap
+  const updatedEntradas = await prisma.entradaSet.findMany({ where: { set_id: set.id } });
+  const totalA = updatedEntradas.filter((e) => e.jugador_id === partida.jugador_a_id).reduce((acc, e) => acc + e.carambolas, 0);
+  const totalB = updatedEntradas.filter((e) => e.jugador_id === partida.jugador_b_id).reduce((acc, e) => acc + e.carambolas, 0);
+  const cantA = updatedEntradas.filter((e) => e.jugador_id === partida.jugador_a_id).length;
+  const cantB = updatedEntradas.filter((e) => e.jugador_id === partida.jugador_b_id).length;
 
-  // Verificar victoria por handicap (meta de carambolas)
-  if (partida.meta_a || partida.meta_b) {
+  if (cantA === cantB && (partida.meta_a || partida.meta_b)) {
     const metaA = partida.meta_a ?? 999;
     const metaB = partida.meta_b ?? 999;
-
     if (totalA >= metaA || totalB >= metaB) {
       await calcularGanadorSet(set.id);
       await calcularGanadorPartida(partida.id);
@@ -366,11 +433,12 @@ export async function marcadorAccion(
   return obtenerMarcador(partida_id);
 }
 
-// ─── CAMBIO DE TURNO (alternancia reglamentaria de entradas) ─────────────────
+// ─── CAMBIO DE TURNO (alternancia reglamentaria autorizada por el juez) ───────
 
 export async function cambioTurno(partida_id: string, set_numero: number) {
   const partida = await prisma.partida.findUnique({
-    where: { id: partida_id }, include: { sets: { include: { entradas: true } } },
+    where: { id: partida_id },
+    include: { sets: { include: { entradas: true } } },
   });
   if (!partida) throw new Error('Partida no encontrada');
   if (partida.estado !== 'en_curso') throw new Error('La partida no está en curso');
@@ -379,46 +447,104 @@ export async function cambioTurno(partida_id: string, set_numero: number) {
   if (!set) throw new Error(`Set ${set_numero} no encontrado`);
   if (set.ganador_id) throw new Error(`El set ${set_numero} ya está finalizado`);
 
-  // Determinar quién tiene la salida en este set (Set 1: salida oficial; Set 2: el rival; Set 3: salida oficial)
-  const jugadorSalidaId = set_numero % 2 === 1
-    ? (partida.jugador_salida_id || partida.jugador_a_id)
-    : (partida.jugador_salida_id === partida.jugador_a_id ? partida.jugador_b_id : partida.jugador_a_id);
-  const jugadorContraId = jugadorSalidaId === partida.jugador_a_id ? partida.jugador_b_id : partida.jugador_a_id;
-
-  const entradasSalida = set.entradas.filter((e) => e.jugador_id === jugadorSalidaId);
-  const entradasContra = set.entradas.filter((e) => e.jugador_id === jugadorContraId);
-
+  const { salidaId, contraId } = resolverSalidaYContraSet(partida, set.numero);
+  const turnoActualId = set.turno_jugador_id || salidaId;
   const limiteEntradas = partida.modo_libre ? null : (partida.limite_entradas ?? null);
 
-  // Caso 1: Estaba tirando el jugador de salida (entradasSalida.length <= entradasContra.length)
-  // Ahora le toca el turno al jugador de contra-salida en la MISMA entrada
-  if (entradasSalida.length <= entradasContra.length) {
-    const numEntrada = entradasContra.length + 1;
-    // Si el jugador de salida no anotó carambolas en este tiro, asegurar que quede registrada su entrada en 0
-    const yaRegistrada = entradasSalida.some((e) => e.numero_entrada === numEntrada);
-    if (!yaRegistrada) {
+  const entradasSalida = set.entradas.filter((e) => e.jugador_id === salidaId).sort((a, b) => a.numero_entrada - b.numero_entrada);
+  const entradasContra = set.entradas.filter((e) => e.jugador_id === contraId).sort((a, b) => a.numero_entrada - b.numero_entrada);
+
+  const numEntradasSalida = entradasSalida.length;
+  const numEntradasContra = entradasContra.length;
+
+  // Si ya se había alcanzado el límite reglamentario de entradas para ambos jugadores:
+  if (limiteEntradas && numEntradasSalida >= limiteEntradas && numEntradasContra >= limiteEntradas) {
+    await calcularGanadorSet(set.id);
+    await calcularGanadorPartida(partida.id);
+    return obtenerMarcador(partida_id);
+  }
+
+  // ── CASO 1: El turno lo tenía el jugador de SALIDA ──
+  if (turnoActualId === salidaId) {
+    // Termina el tiro del jugador de salida: asegurar que su entrada exista
+    const numEntrada = Math.max(numEntradasSalida, 1);
+    if (numEntradasSalida === 0) {
       await prisma.entradaSet.create({
-        data: { set_id: set.id, jugador_id: jugadorSalidaId, numero_entrada: numEntrada, carambolas: 0 },
-      });
-    }
-  } else {
-    // Caso 2: Estaba tirando el jugador de contra-salida (entradasSalida.length > entradasContra.length)
-    // El jugador de contra-salida acaba de terminar su tiro: LA ENTRADA SE COMPLETA
-    const numEntrada = entradasSalida.length;
-    const yaRegistrada = entradasContra.some((e) => e.numero_entrada === numEntrada);
-    if (!yaRegistrada) {
-      await prisma.entradaSet.create({
-        data: { set_id: set.id, jugador_id: jugadorContraId, numero_entrada: numEntrada, carambolas: 0 },
+        data: { set_id: set.id, jugador_id: salidaId, numero_entrada: 1, carambolas: 0 },
       });
     }
 
-    // Verificar si se alcanzó el límite reglamentario de entradas
-    if (limiteEntradas && numEntrada >= limiteEntradas) {
-      await calcularGanadorSet(set.id);
-      await calcularGanadorPartida(partida_id);
+    // El turno pasa al jugador de CONTRA-SALIDA
+    // Abrir o asegurar la entrada de contra-salida para este mismo número de entrada
+    const entradaContraExistente = entradasContra.find((e) => e.numero_entrada === numEntrada);
+    if (!entradaContraExistente) {
+      await prisma.entradaSet.create({
+        data: { set_id: set.id, jugador_id: contraId, numero_entrada: numEntrada, carambolas: 0 },
+      });
+    }
+
+    await prisma.set.update({
+      where: { id: set.id },
+      data: { turno_jugador_id: contraId },
+    });
+
+    return obtenerMarcador(partida_id);
+  }
+
+  // ── CASO 2: El turno lo tenía el jugador de CONTRA-SALIDA ──
+  // En este punto, ambos jugadores completaron la entrada actual
+  const entradaActualNumero = Math.max(numEntradasContra, 1);
+
+  if (numEntradasContra === 0) {
+    await prisma.entradaSet.create({
+      data: { set_id: set.id, jugador_id: contraId, numero_entrada: 1, carambolas: 0 },
+    });
+  }
+
+  // Recalcular carambolas acumuladas en el set tras finalizar la entrada completa
+  const allEntradas = await prisma.entradaSet.findMany({ where: { set_id: set.id } });
+  const sumaA = allEntradas.filter((e) => e.jugador_id === partida.jugador_a_id).reduce((acc, e) => acc + e.carambolas, 0);
+  const sumaB = allEntradas.filter((e) => e.jugador_id === partida.jugador_b_id).reduce((acc, e) => acc + e.carambolas, 0);
+  const metaA = partida.meta_a ?? 999;
+  const metaB = partida.meta_b ?? 999;
+
+  const { ganador_posible, es_empate } = evaluarResultadoSet(sumaA, sumaB, partida.meta_a, partida.meta_b);
+
+  const limiteAlcanzado = limiteEntradas !== null && entradaActualNumero >= limiteEntradas;
+  const metaAlcanzada = (partida.meta_a && sumaA >= metaA) || (partida.meta_b && sumaB >= metaB);
+
+  if (limiteAlcanzado || metaAlcanzada) {
+    if (es_empate) {
+      // REGLA 3: EMPATE TÉCNICO AL LÍMITE DE ENTRADAS O METAS:
+      // Se congela el set para la Carambola de Oro.
+      // NO se crean más entradas, NO se permite avanzar más.
+      await prisma.set.update({
+        where: { id: set.id },
+        data: { ganador_id: null },
+      });
+      return obtenerMarcador(partida_id);
+    } else {
+      // Hay ganador reglamentario:
+      const ganadorId = ganador_posible === 'a' ? partida.jugador_a_id : partida.jugador_b_id;
+      await prisma.set.update({
+        where: { id: set.id },
+        data: { ganador_id: ganadorId },
+      });
+      await calcularGanadorPartida(partida.id);
       return obtenerMarcador(partida_id);
     }
   }
+
+  // Si no ha terminado el set: el turno vuelve a SALIDA para la siguiente entrada
+  const siguienteEntrada = entradaActualNumero + 1;
+  await prisma.entradaSet.create({
+    data: { set_id: set.id, jugador_id: salidaId, numero_entrada: siguienteEntrada, carambolas: 0 },
+  });
+
+  await prisma.set.update({
+    where: { id: set.id },
+    data: { turno_jugador_id: salidaId },
+  });
 
   return obtenerMarcador(partida_id);
 }
@@ -434,13 +560,11 @@ export async function obtenerMarcador(id: string) {
     const carambolasA = entradasA.reduce((acc, e) => acc + e.carambolas, 0);
     const carambolasB = entradasB.reduce((acc, e) => acc + e.carambolas, 0);
 
-    const jugadorSalidaId = set.numero % 2 === 1
-      ? (partida.jugador_salida_id || partida.jugador_a_id)
-      : (partida.jugador_salida_id === partida.jugador_a_id ? partida.jugador_b_id : partida.jugador_a_id);
-    const jugadorContraId = jugadorSalidaId === partida.jugador_a_id ? partida.jugador_b_id : partida.jugador_a_id;
-    const countSalida = set.entradas.filter((e) => e.jugador_id === jugadorSalidaId).length;
-    const countContra = set.entradas.filter((e) => e.jugador_id === jugadorContraId).length;
-    const turnoJugadorId = countSalida <= countContra ? jugadorSalidaId : jugadorContraId;
+    const { salidaId, contraId } = resolverSalidaYContraSet(partida, set.numero);
+    const turnoJugadorId = set.turno_jugador_id || salidaId;
+
+    const limiteEntradas = partida.modo_libre ? null : (partida.limite_entradas ?? null);
+    const limiteAlcanzado = !partida.modo_libre && !!limiteEntradas && entradasA.length >= limiteEntradas && entradasB.length >= limiteEntradas;
 
     const { es_empate } = evaluarResultadoSet(carambolasA, carambolasB, partida.meta_a, partida.meta_b);
 
@@ -449,7 +573,8 @@ export async function obtenerMarcador(id: string) {
       ganador_id: set.ganador_id,
       desempate_oro: !!set.desempate_oro,
       es_empate: es_empate && !set.ganador_id,
-      jugador_salida_id: jugadorSalidaId,
+      limite_entradas_alcanzado: limiteAlcanzado,
+      jugador_salida_id: salidaId,
       turno_jugador_id: turnoJugadorId,
       carambolas_a: carambolasA,
       carambolas_b: carambolasB,
@@ -607,7 +732,9 @@ export async function confirmarPartida(id: string, usuario_id: string, usuario_r
   await recalcularPromedioHistorico(partida.jugador_b_id);
 
   // Avanzar ganador en bracket si aplica
-  try { await avanzarGanador(id); } catch { /* no es partida de bracket */ }
+  try { await avanzarGanador(id); } catch (err) {
+    console.warn('[BRACKET] No se pudo avanzar el ganador:', err instanceof Error ? err.message : err);
+  }
 
   return obtenerPartida(id);
 }
@@ -654,17 +781,31 @@ export async function reabrirPartida(id: string, admin_id: string, motivo?: stri
     fecha: new Date().toISOString(),
   });
 
-  const partidaActualizada = await prisma.partida.update({
-    where: { id },
-    data: {
-      confirmada: false,
-      bloqueada: false,
-      solicitud_reapertura: false,
-      motivo_reapertura: null,
-      estado: 'en_curso',
-      audit_log: currentAudit,
-    },
+  if (partida.estado === 'pendiente') throw new Error('La partida aún no se ha iniciado, no hay nada que reabrir');
+
+  // Limpiar el último set decidido (el que cerró la partida) para poder corregirlo en el marcador
+  const setDecisivo = await prisma.set.findFirst({
+    where: { partida_id: id, ganador_id: { not: null } },
+    orderBy: { numero: 'desc' },
   });
+
+  const [partidaActualizada] = await prisma.$transaction([
+    prisma.partida.update({
+      where: { id },
+      data: {
+        confirmada: false,
+        bloqueada: false,
+        solicitud_reapertura: false,
+        motivo_reapertura: null,
+        estado: 'en_curso',
+        ganador_id: null,
+        audit_log: currentAudit,
+      },
+    }),
+    ...(setDecisivo
+      ? [prisma.set.update({ where: { id: setDecisivo.id }, data: { ganador_id: null, desempate_oro: false } })]
+      : []),
+  ]);
 
   // Recalcular rankings inmediatamente
   await recalcularRankingCompleto(partida.fase.torneo_id);

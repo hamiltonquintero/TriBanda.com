@@ -8,7 +8,7 @@ export const crearPartidaSchema = z.object({
   juez_id: z.string().uuid().optional().or(z.literal('')),
   fecha: z.string().optional().or(z.literal('')),
   hora: z.string().optional().or(z.literal('')),
-  total_sets: z.coerce.number().int().min(1).max(3).default(3),
+  total_sets: z.coerce.number().int().min(1).max(5).default(3),
   meta_a: z.coerce.number().int().min(1).optional(),
   meta_b: z.coerce.number().int().min(1).optional(),
 }).refine((d) => d.jugador_a_id !== d.jugador_b_id, {
@@ -39,12 +39,12 @@ export const registrarEntradaSchema = z.object({
 export const marcadorSchema = z.object({
   jugador_id: z.string().uuid(),
   accion: z.enum(['sumar', 'restar']),
-  set_numero: z.number().int().min(1).max(3),
+  set_numero: z.number().int().min(1).max(5),
 });
 
 // Cambio de turno (nueva entrada)
 export const cambioTurnoSchema = z.object({
-  set_numero: z.number().int().min(1).max(3),
+  set_numero: z.number().int().min(1).max(5),
 });
 
 export const confirmarSchema = z.object({});

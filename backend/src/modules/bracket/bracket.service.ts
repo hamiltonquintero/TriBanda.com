@@ -28,6 +28,13 @@ export function buildSeedOrder(n: number): number[] {
   return result;
 }
 
+// Cantidad de sets de una partida de llaves según la configuración del torneo
+function setsParaTorneo(torneo: { modalidad: string; total_sets_default: number }) {
+  const total = torneo.modalidad === 'profesional' ? (torneo.total_sets_default || 3) : 1;
+  const n = Math.max(1, Math.min(5, Math.round(Number(total))));
+  return { total: n, create: Array.from({ length: n }, (_, k) => ({ numero: k + 1 })) };
+}
+
 // ─── GENERAR BRACKET BILATERAL (Formato Oficial Playoffs 32) ──────────────────
 
 export async function generarBracket(fase_id: string, jugador_ids: string[], tamano_manual?: number) {
@@ -39,6 +46,8 @@ export async function generarBracket(fase_id: string, jugador_ids: string[], tam
 
   const N = jugador_ids.length;
   if (N < 2) throw new Error('Se requieren al menos 2 jugadores para generar el bracket');
+  if (new Set(jugador_ids).size !== N) throw new Error('La lista de jugadores tiene jugadores repetidos');
+  const cfgSets = setsParaTorneo(fase.torneo);
 
   // 1. Eliminar llaves y partidas previas de esta fase
   await prisma.bracketSlot.deleteMany({ where: { fase_id } });
@@ -140,9 +149,9 @@ export async function generarBracket(fase_id: string, jugador_ids: string[], tam
           fase_id,
           jugador_a_id: jA,
           jugador_b_id: jB,
-          total_sets: 3,
+          total_sets: cfgSets.total,
           estado: 'pendiente',
-          sets: { create: [{ numero: 1 }, { numero: 2 }, { numero: 3 }] },
+          sets: { create: cfgSets.create },
         },
       });
       await prisma.bracketSlot.update({ where: { id: slotA!.id }, data: { partida_id: partida.id } });
@@ -182,9 +191,9 @@ export async function generarBracket(fase_id: string, jugador_ids: string[], tam
             fase_id,
             jugador_a_id: slotA.jugador_id,
             jugador_b_id: slotB.jugador_id,
-            total_sets: 3,
+            total_sets: cfgSets.total,
             estado: 'pendiente',
-            sets: { create: [{ numero: 1 }, { numero: 2 }, { numero: 3 }] },
+            sets: { create: cfgSets.create },
           },
         });
         await prisma.bracketSlot.update({ where: { id: slotA.id }, data: { partida_id: partida.id } });
@@ -305,7 +314,7 @@ export async function obtenerBracket(fase_id: string) {
 export async function avanzarGanador(partida_id: string) {
   const partida = await prisma.partida.findUnique({
     where: { id: partida_id },
-    include: { fase: true },
+    include: { fase: { include: { torneo: true } } },
   });
   if (!partida) throw new Error('Partida no encontrada');
   if (!partida.ganador_id) throw new Error('La partida no tiene ganador aún');
@@ -334,6 +343,28 @@ export async function avanzarGanador(partida_id: string) {
 
   if (!slotDestino) return;
 
+  const esImpar = posicionDestino % 2 === 1;
+
+  // Caso: el ganador ya había avanzado antes (reapertura/corrección de resultado)
+  if (slotDestino.jugador_id && slotDestino.jugador_id !== partida.ganador_id && slotDestino.partida_id) {
+    const siguiente = await prisma.partida.findUnique({ where: { id: slotDestino.partida_id } });
+    if (siguiente && siguiente.estado !== 'pendiente') {
+      throw new Error('No se puede cambiar el ganador: el siguiente cruce ya fue iniciado. Reabre primero esa partida.');
+    }
+    if (siguiente) {
+      // El jugador anterior ocupa el lado A si esImpar, lado B si no
+      await prisma.partida.update({
+        where: { id: siguiente.id },
+        data: esImpar ? { jugador_a_id: partida.ganador_id } : { jugador_b_id: partida.ganador_id },
+      });
+    }
+    await prisma.bracketSlot.update({
+      where: { id: slotDestino.id },
+      data: { jugador_id: partida.ganador_id },
+    });
+    return;
+  }
+
   // Actualizar jugador en slot destino
   await prisma.bracketSlot.update({
     where: { id: slotDestino.id },
@@ -341,7 +372,6 @@ export async function avanzarGanador(partida_id: string) {
   });
 
   // Verificar si su rival en la siguiente ronda ya está definido
-  const esImpar = posicionDestino % 2 === 1;
   const posRival = esImpar ? posicionDestino + 1 : posicionDestino - 1;
 
   const slotRival = await prisma.bracketSlot.findFirst({
@@ -355,15 +385,16 @@ export async function avanzarGanador(partida_id: string) {
   if (slotRival?.jugador_id && !slotDestino.partida_id && !slotRival.partida_id) {
     const jA = esImpar ? partida.ganador_id : slotRival.jugador_id;
     const jB = esImpar ? slotRival.jugador_id : partida.ganador_id;
+    const cfgSets = setsParaTorneo(partida.fase.torneo);
 
     const nuevaPartida = await prisma.partida.create({
       data: {
         fase_id: partida.fase_id,
         jugador_a_id: jA,
         jugador_b_id: jB,
-        total_sets: 3,
+        total_sets: cfgSets.total,
         estado: 'pendiente',
-        sets: { create: [{ numero: 1 }, { numero: 2 }, { numero: 3 }] },
+        sets: { create: cfgSets.create },
       },
     });
 

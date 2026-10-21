@@ -11,6 +11,7 @@ interface MarcadorSet {
   es_empate?: boolean;
   jugador_salida_id?: string;
   turno_jugador_id?: string;
+  limite_entradas_alcanzado?: boolean;
   carambolas_a: number;
   carambolas_b: number;
   entradas_a: number;
@@ -353,6 +354,15 @@ export default function MarcadorPage() {
   const turnoActualId = setData?.turno_jugador_id || jugadorSalidaSetId;
   const esTurnoA = puedeEditar && !setData?.ganador_id && turnoActualId === jugador_a.id;
   const esTurnoB = puedeEditar && !setData?.ganador_id && turnoActualId === jugador_b.id;
+
+  // Límite de entradas y desempate reglamentario por Carambola de Oro:
+  const limiteEntradasNum = marcador.modo_libre ? null : (marcador.limite_entradas ?? null);
+  const entradasLimiteAlcanzado = Boolean(
+    setData?.limite_entradas_alcanzado ||
+    (!marcador.modo_libre && limiteEntradasNum && (setData?.entradas_a ?? 0) >= limiteEntradasNum && (setData?.entradas_b ?? 0) >= limiteEntradasNum)
+  );
+  const setEnDesempateOro = Boolean(setData && setData.es_empate && !setData.ganador_id);
+  const setBloqueadoParaAnotar = Boolean(setData?.ganador_id || setEnDesempateOro || entradasLimiteAlcanzado);
 
   return (
     <div className="max-w-2xl mx-auto">
@@ -758,16 +768,24 @@ export default function MarcadorPage() {
             className={`relative rounded-2xl p-3 sm:p-4 transition-all duration-300 ${
               esTurnoA
                 ? 'border-2 border-yellow-400 bg-yellow-400/20 shadow-[0_0_25px_rgba(250,204,21,0.35)] ring-4 ring-yellow-400/40 scale-[1.02]'
-                : 'border border-white/10 bg-black/20 opacity-85'
+                : 'border border-white/10 bg-black/30 opacity-70'
             }`}
           >
-            {/* Indicador de turno: Marca de agua / Badge amarillo */}
-            {esTurnoA && (
+            {/* Indicador de turno / espera */}
+            {esTurnoA ? (
               <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 z-10 animate-bounce">
                 <span className="bg-yellow-400 text-yellow-950 font-black text-[10px] sm:text-[11px] px-3 py-0.5 rounded-full shadow-md uppercase tracking-wider flex items-center gap-1 whitespace-nowrap">
                   <span>🎱</span> En Turno
                 </span>
               </div>
+            ) : (
+              !setData?.ganador_id && !setBloqueadoParaAnotar && (
+                <div className="absolute -top-3 left-1/2 -translate-x-1/2 z-10">
+                  <span className="bg-black/70 text-gray-300 border border-white/20 text-[9px] px-2 py-0.5 rounded-full flex items-center gap-1 whitespace-nowrap">
+                    <span>🔒</span> En Espera
+                  </span>
+                </div>
+              )
             )}
 
             <div className="inline-flex items-center gap-1.5 bg-black/40 backdrop-blur-sm px-2.5 py-0.5 rounded-full text-xs mb-2 border border-white/10">
@@ -819,16 +837,24 @@ export default function MarcadorPage() {
             className={`relative rounded-2xl p-3 sm:p-4 transition-all duration-300 ${
               esTurnoB
                 ? 'border-2 border-yellow-400 bg-yellow-400/20 shadow-[0_0_25px_rgba(250,204,21,0.35)] ring-4 ring-yellow-400/40 scale-[1.02]'
-                : 'border border-white/10 bg-black/20 opacity-85'
+                : 'border border-white/10 bg-black/30 opacity-70'
             }`}
           >
-            {/* Indicador de turno: Marca de agua / Badge amarillo */}
-            {esTurnoB && (
+            {/* Indicador de turno / espera */}
+            {esTurnoB ? (
               <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 z-10 animate-bounce">
                 <span className="bg-yellow-400 text-yellow-950 font-black text-[10px] sm:text-[11px] px-3 py-0.5 rounded-full shadow-md uppercase tracking-wider flex items-center gap-1 whitespace-nowrap">
                   <span>🎱</span> En Turno
                 </span>
               </div>
+            ) : (
+              !setData?.ganador_id && !setBloqueadoParaAnotar && (
+                <div className="absolute -top-3 left-1/2 -translate-x-1/2 z-10">
+                  <span className="bg-black/70 text-gray-300 border border-white/20 text-[9px] px-2 py-0.5 rounded-full flex items-center gap-1 whitespace-nowrap">
+                    <span>🔒</span> En Espera
+                  </span>
+                </div>
+              )
             )}
 
             <div className="inline-flex items-center gap-1.5 bg-black/40 backdrop-blur-sm px-2.5 py-0.5 rounded-full text-xs mb-2 border border-white/10">
@@ -855,71 +881,133 @@ export default function MarcadorPage() {
           </div>
         </div>
 
-        {/* Botones +1 / -1 */}
-        {puedeEditar && setData && !setData.ganador_id && (
+        {/* Botones +1 / -1 y Cambio de Turno (Bloqueo estricto por turno) */}
+        {puedeEditar && setData && !setBloqueadoParaAnotar && (
           <div className="grid grid-cols-3 gap-4 mt-6">
+            {/* Controles Jugador A */}
             <div className="flex flex-col gap-2">
-              <button onClick={() => sumar.mutate({ jugador_id: jugador_a.id, set_numero: setActivo })}
-                className="bg-green-600 hover:bg-green-700 text-white text-2xl font-bold py-4 rounded-xl transition shadow active:scale-95">+1</button>
-              <button onClick={() => restar.mutate({ jugador_id: jugador_a.id, set_numero: setActivo })}
-                className="bg-red-600 hover:bg-red-700 text-white text-lg font-bold py-2 rounded-xl transition active:scale-95">-1</button>
-            </div>
-            <div className="flex items-center justify-center">
-              <button onClick={() => turno.mutate(setActivo)}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-3 rounded-xl text-sm font-semibold transition shadow flex items-center gap-1.5 active:scale-95">
-                <span>🔄</span> Cambio de turno
+              <button
+                onClick={() => sumar.mutate({ jugador_id: jugador_a.id, set_numero: setActivo })}
+                disabled={!esTurnoA || sumar.isPending || restar.isPending}
+                className={`text-2xl font-bold py-4 rounded-xl transition shadow active:scale-95 flex items-center justify-center gap-1 ${
+                  esTurnoA
+                    ? 'bg-green-600 hover:bg-green-500 text-white shadow-green-900/40 ring-2 ring-green-400/50 cursor-pointer'
+                    : 'bg-white/5 border border-white/10 text-gray-400 opacity-30 cursor-not-allowed'
+                }`}
+                title={esTurnoA ? `Anotar carambola a ${jugador_a.nombre_completo}` : `Bloqueado: Turno de ${jugador_b.nombre_completo}`}
+              >
+                {!esTurnoA && <span className="text-sm">🔒</span>}
+                <span>+1</span>
+              </button>
+              <button
+                onClick={() => restar.mutate({ jugador_id: jugador_a.id, set_numero: setActivo })}
+                disabled={!esTurnoA || sumar.isPending || restar.isPending}
+                className={`text-lg font-bold py-2 rounded-xl transition active:scale-95 flex items-center justify-center gap-1 ${
+                  esTurnoA
+                    ? 'bg-red-600 hover:bg-red-500 text-white shadow-red-900/40 cursor-pointer'
+                    : 'bg-white/5 border border-white/10 text-gray-500 opacity-20 cursor-not-allowed'
+                }`}
+                title={esTurnoA ? `Restar carambola a ${jugador_a.nombre_completo}` : `Bloqueado: Turno de ${jugador_b.nombre_completo}`}
+              >
+                {!esTurnoA && <span className="text-xs">🔒</span>}
+                <span>-1</span>
               </button>
             </div>
+
+            {/* Control Central: Cambio de Turno */}
+            <div className="flex flex-col items-center justify-center gap-1.5">
+              <button
+                onClick={() => turno.mutate(setActivo)}
+                disabled={turno.isPending || setBloqueadoParaAnotar}
+                className="bg-blue-600 hover:bg-blue-500 text-white px-3 py-3.5 rounded-xl text-xs sm:text-sm font-bold transition shadow-lg shadow-blue-900/40 flex flex-col items-center justify-center gap-1 w-full active:scale-95 border border-blue-400/40"
+              >
+                <span className="text-xl">🔄</span>
+                <span>Cambio de turno</span>
+              </button>
+              <span className="text-[10px] text-white/70 text-center leading-tight">
+                Orden exclusiva del juez
+              </span>
+            </div>
+
+            {/* Controles Jugador B */}
             <div className="flex flex-col gap-2">
-              <button onClick={() => sumar.mutate({ jugador_id: jugador_b.id, set_numero: setActivo })}
-                className="bg-green-600 hover:bg-green-700 text-white text-2xl font-bold py-4 rounded-xl transition shadow active:scale-95">+1</button>
-              <button onClick={() => restar.mutate({ jugador_id: jugador_b.id, set_numero: setActivo })}
-                className="bg-red-600 hover:bg-red-700 text-white text-lg font-bold py-2 rounded-xl transition active:scale-95">-1</button>
+              <button
+                onClick={() => sumar.mutate({ jugador_id: jugador_b.id, set_numero: setActivo })}
+                disabled={!esTurnoB || sumar.isPending || restar.isPending}
+                className={`text-2xl font-bold py-4 rounded-xl transition shadow active:scale-95 flex items-center justify-center gap-1 ${
+                  esTurnoB
+                    ? 'bg-green-600 hover:bg-green-500 text-white shadow-green-900/40 ring-2 ring-green-400/50 cursor-pointer'
+                    : 'bg-white/5 border border-white/10 text-gray-400 opacity-30 cursor-not-allowed'
+                }`}
+                title={esTurnoB ? `Anotar carambola a ${jugador_b.nombre_completo}` : `Bloqueado: Turno de ${jugador_a.nombre_completo}`}
+              >
+                {!esTurnoB && <span className="text-sm">🔒</span>}
+                <span>+1</span>
+              </button>
+              <button
+                onClick={() => restar.mutate({ jugador_id: jugador_b.id, set_numero: setActivo })}
+                disabled={!esTurnoB || sumar.isPending || restar.isPending}
+                className={`text-lg font-bold py-2 rounded-xl transition active:scale-95 flex items-center justify-center gap-1 ${
+                  esTurnoB
+                    ? 'bg-red-600 hover:bg-red-500 text-white shadow-red-900/40 cursor-pointer'
+                    : 'bg-white/5 border border-white/10 text-gray-500 opacity-20 cursor-not-allowed'
+                }`}
+                title={esTurnoB ? `Restar carambola a ${jugador_b.nombre_completo}` : `Bloqueado: Turno de ${jugador_a.nombre_completo}`}
+              >
+                {!esTurnoB && <span className="text-xs">🔒</span>}
+                <span>-1</span>
+              </button>
             </div>
           </div>
         )}
 
-        {/* Panel de Desempate: Carambola de Oro (cuando hay empate exacto por handicap al límite de entradas) */}
-        {setData && setData.es_empate && !setData.ganador_id && (
-          <div className="mt-5 bg-gradient-to-r from-amber-950/90 via-yellow-950/95 to-amber-950/90 backdrop-blur-md border-2 border-yellow-400 rounded-2xl p-5 text-center text-white shadow-2xl animate-fade-in">
-            <div className="inline-flex items-center gap-2 bg-yellow-400 text-yellow-950 text-xs font-black px-3.5 py-1 rounded-full uppercase tracking-wider mb-2 shadow">
-              <span>⚔️</span> Set Empatado (Reglamento de Handicap)
+        {/* Panel Exclusivo de Desempate: Carambola de Oro */}
+        {setData && setEnDesempateOro && (
+          <div className="mt-5 bg-gradient-to-r from-amber-950 via-yellow-950 to-amber-950 border-2 border-yellow-400 rounded-2xl p-5 sm:p-6 text-center text-white shadow-2xl animate-fade-in ring-4 ring-yellow-400/30">
+            <div className="inline-flex items-center gap-2 bg-yellow-400 text-yellow-950 text-xs font-black px-4 py-1.5 rounded-full uppercase tracking-wider mb-2 shadow-lg">
+              <span>⚔️</span> LÍMITE DE ENTRADAS ALCANZADO — EMPATE REGLAMENTARIO
             </div>
-            <h3 className="text-lg font-black text-yellow-300 mb-1">
+            <h3 className="text-xl sm:text-2xl font-black text-yellow-300 mb-2">
               Desempate: Carambola de Oro
             </h3>
-            <p className="text-xs text-yellow-100/90 max-w-md mx-auto mb-4 leading-relaxed">
-              Ambos deportistas igualaron según su ventaja reglamentaria de handicap ({setData.carambolas_a} vs {setData.carambolas_b}).
-              Cada jugador ejecuta un tiro inicial ilimitado en la mesa. <strong>El juez declara al ganador del set:</strong>
+            <p className="text-xs sm:text-sm text-yellow-100/90 max-w-lg mx-auto mb-2 leading-relaxed">
+              Ambos deportistas finalizaron sus entradas reglamentarias ({setData.entradas_a} de {marcador.limite_entradas || 25}) igualados por hándicap ({setData.carambolas_a} pts vs {setData.carambolas_b} pts).
+            </p>
+            <p className="text-xs text-yellow-200/90 max-w-lg mx-auto mb-5 leading-relaxed bg-black/40 p-3 rounded-xl border border-yellow-400/20">
+              🔒 <strong>Entradas y casillas bloqueadas.</strong> No se permiten más turnos ni modificaciones de carambolas. Cada deportista ejecuta su tiro inicial ilimitado en la mesa. <strong>El juez determina a continuación quién ganó la Carambola de Oro:</strong>
             </p>
 
             {puedeEditar ? (
-              <div className="grid grid-cols-2 gap-3 max-w-md mx-auto">
+              <div className="grid grid-cols-2 gap-3 sm:gap-4 max-w-md mx-auto">
                 <button
                   type="button"
                   onClick={() => desempateOroMut.mutate({ set_numero: setActivo, ganador_id: jugador_a.id })}
                   disabled={desempateOroMut.isPending}
-                  className="bg-yellow-400 hover:bg-yellow-300 text-yellow-950 font-black py-3 px-3 rounded-xl shadow-lg transition flex items-center justify-center gap-1.5 text-xs sm:text-sm active:scale-95"
+                  className="bg-yellow-400 hover:bg-yellow-300 text-yellow-950 font-black py-3.5 px-3 rounded-xl shadow-xl transition flex flex-col items-center justify-center gap-1 text-xs sm:text-sm active:scale-95 border-2 border-yellow-200"
                 >
-                  <span>🏅</span> Ganó {jugador_a.nombre_completo}
+                  <span className="text-xl">🏅</span>
+                  <span className="leading-tight font-black">{jugador_a.nombre_completo}</span>
+                  <span className="text-[10px] text-yellow-900 font-semibold uppercase">Declarar Ganador</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => desempateOroMut.mutate({ set_numero: setActivo, ganador_id: jugador_b.id })}
                   disabled={desempateOroMut.isPending}
-                  className="bg-yellow-400 hover:bg-yellow-300 text-yellow-950 font-black py-3 px-3 rounded-xl shadow-lg transition flex items-center justify-center gap-1.5 text-xs sm:text-sm active:scale-95"
+                  className="bg-yellow-400 hover:bg-yellow-300 text-yellow-950 font-black py-3.5 px-3 rounded-xl shadow-xl transition flex flex-col items-center justify-center gap-1 text-xs sm:text-sm active:scale-95 border-2 border-yellow-200"
                 >
-                  <span>🏅</span> Ganó {jugador_b.nombre_completo}
+                  <span className="text-xl">🏅</span>
+                  <span className="leading-tight font-black">{jugador_b.nombre_completo}</span>
+                  <span className="text-[10px] text-yellow-900 font-semibold uppercase">Declarar Ganador</span>
                 </button>
               </div>
             ) : (
-              <p className="text-xs text-yellow-300/80 italic">A la espera de la resolución del juez oficial en mesa...</p>
+              <p className="text-xs text-yellow-300/80 italic">A la espera de que el juez oficial declare el ganador del desempate...</p>
             )}
           </div>
         )}
 
-        {/* Acciones de set: Finalizar / Desempate Carambola de Oro Opcional */}
-        {puedeEditar && setData && !setData.ganador_id && (
+        {/* Acciones de set opcionales (Solo visibles si el set está en juego normal) */}
+        {puedeEditar && setData && !setData.ganador_id && !setEnDesempateOro && !entradasLimiteAlcanzado && (
           <div className="flex flex-wrap items-center justify-center gap-2 mt-5">
             <button
               onClick={() => finSet.mutate(setActivo)}

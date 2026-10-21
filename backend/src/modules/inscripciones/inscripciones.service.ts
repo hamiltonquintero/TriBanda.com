@@ -134,7 +134,16 @@ export async function sorteoConGrupos(
     [mezclados[i], mezclados[j]] = [mezclados[j], mezclados[i]];
   }
 
-  // Eliminar grupos existentes de la fase
+  // No rehacer grupos si ya hay partidas iniciadas o finalizadas
+  const iniciadas = await prisma.partida.count({
+    where: { fase_id, grupo_id: { not: null }, estado: { in: ['en_curso', 'finalizada'] } },
+  });
+  if (iniciadas > 0) {
+    throw new Error('No se puede rehacer el sorteo: ya hay partidas en curso o finalizadas en esta fase');
+  }
+
+  // Eliminar partidas pendientes, asignaciones y grupos existentes de la fase
+  await prisma.partida.deleteMany({ where: { fase_id, grupo_id: { not: null } } });
   await prisma.grupoJugador.deleteMany({ where: { grupo: { fase_id } } });
   await prisma.grupo.deleteMany({ where: { fase_id } });
 

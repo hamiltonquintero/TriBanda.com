@@ -194,8 +194,20 @@ export async function asignarJugadores(grupo_id: string, jugador_ids: string[]) 
     throw new Error(`Los siguientes jugadores ya están en otro grupo de esta fase: ${nombres}`);
   }
 
-  // Reemplazar asignación completa en transacción
+  // No se pueden quitar jugadores que ya tienen partidas iniciadas o finalizadas en este grupo
+  const iniciadasGrupo = await prisma.partida.findMany({
+    where: { grupo_id, estado: { in: ['en_curso', 'finalizada'] } },
+    select: { jugador_a_id: true, jugador_b_id: true },
+  });
+  const nuevos = new Set(jugador_ids);
+  const huerfano = iniciadasGrupo.some((p) => !nuevos.has(p.jugador_a_id) || !nuevos.has(p.jugador_b_id));
+  if (huerfano) {
+    throw new Error('No se puede quitar a un jugador que ya tiene partidas en curso o finalizadas en este grupo. Usa "Reemplazar jugador".');
+  }
+
+  // Reemplazar asignación en transacción (las partidas pendientes previas quedan obsoletas y se regeneran)
   await prisma.$transaction([
+    prisma.partida.deleteMany({ where: { grupo_id, estado: 'pendiente' } }),
     prisma.grupoJugador.deleteMany({ where: { grupo_id } }),
     prisma.grupoJugador.createMany({
       data: jugador_ids.map((jugador_id) => ({ grupo_id, jugador_id })),
@@ -242,6 +254,14 @@ export async function sorteoAutomatico(fase_id: string, jugador_ids: string[], c
   for (const [gid, jids] of Object.entries(asignaciones)) {
     if (jids.length < 2) throw new Error(`El grupo quedaría con menos de 2 jugadores`);
     if (jids.length > 6) throw new Error(`El grupo quedaría con más de 6 jugadores`);
+  }
+
+  // No rehacer el sorteo si ya hay partidas iniciadas o finalizadas en los grupos de la fase
+  const iniciadasFase = await prisma.partida.count({
+    where: { fase_id, grupo_id: { not: null }, estado: { in: ['en_curso', 'finalizada'] } },
+  });
+  if (iniciadasFase > 0) {
+    throw new Error('No se puede rehacer el sorteo: ya hay partidas en curso o finalizadas en esta fase');
   }
 
   // Limpiar y reasignar en transacción (incluyendo partidas pendientes previas)
@@ -321,15 +341,17 @@ export async function generarPartidasFase(fase_id: string) {
       .filter((j): j is NonNullable<typeof j> => Boolean(j && j.id));
     if (jugadores.length < 2) continue;
 
-    // Verificar si ya hay partidas creadas en el grupo
+    // Cruces ya existentes en el grupo (sin importar el orden A/B)
     const existentes = await prisma.partida.findMany({
       where: { grupo_id: grupo.id },
+      select: { jugador_a_id: true, jugador_b_id: true },
     });
-
-    if (existentes.length > 0) continue; // ya tiene partidas generadas
+    const parKey = (x: string, y: string) => [x, y].sort().join('|');
+    const paresExistentes = new Set(existentes.map((p) => parKey(p.jugador_a_id, p.jugador_b_id)));
 
     for (let i = 0; i < jugadores.length; i++) {
       for (let j = i + 1; j < jugadores.length; j++) {
+        if (paresExistentes.has(parKey(jugadores[i].id, jugadores[j].id))) continue;
         const metaA = Math.round(Number(metaMap.get(jugadores[i].id) ?? defaultMeta)) || 30;
         const metaB = Math.round(Number(metaMap.get(jugadores[j].id) ?? defaultMeta)) || 30;
         const limiteEntradas = esModoLibre
@@ -608,12 +630,21 @@ export async function reemplazarJugador(grupo_id: string, jugador_saliente_id: s
     },
   });
 
+  // Meta (handicap) del jugador entrante según su inscripción
+  const insEntrante = await prisma.inscripcionTorneo.findUnique({
+    where: { torneo_id_jugador_id: { torneo_id: grupo.fase.torneo_id, jugador_id: jugador_entrante_id } },
+  });
+
   for (const p of partidasPendientes) {
+    const saleEsA = p.jugador_a_id === jugador_saliente_id;
     await prisma.partida.update({
       where: { id: p.id },
       data: {
-        jugador_a_id: p.jugador_a_id === jugador_saliente_id ? jugador_entrante_id : p.jugador_a_id,
-        jugador_b_id: p.jugador_b_id === jugador_saliente_id ? jugador_entrante_id : p.jugador_b_id,
+        jugador_a_id: saleEsA ? jugador_entrante_id : p.jugador_a_id,
+        jugador_b_id: !saleEsA ? jugador_entrante_id : p.jugador_b_id,
+        ...(insEntrante?.meta_puntos
+          ? (saleEsA ? { meta_a: Math.round(Number(insEntrante.meta_puntos)) } : { meta_b: Math.round(Number(insEntrante.meta_puntos)) })
+          : {}),
       },
     });
   }
@@ -667,6 +698,8 @@ export async function agregarJugadorAGrupo(grupo_id: string, jugador_id: string)
   });
   if (conflicto) throw new Error('El jugador ya pertenece a un grupo en esta fase');
 
+  if (grupo.jugadores.length >= 6) throw new Error('El grupo ya tiene el máximo de 6 jugadores');
+
   await prisma.grupoJugador.create({
     data: { grupo_id, jugador_id },
   });
@@ -684,6 +717,15 @@ export async function agregarJugadorAGrupo(grupo_id: string, jugador_id: string)
       esModoLibre = true;
     }
 
+    // Metas individuales (handicap) según inscripción
+    const inscripciones = await prisma.inscripcionTorneo.findMany({
+      where: { torneo_id: grupo.fase.torneo_id, jugador_id: { in: [...otrosJugadores, jugador_id] } },
+    });
+    const metaDe = (id: string) => {
+      const ins = inscripciones.find((i) => i.jugador_id === id);
+      return ins?.meta_puntos ? Math.round(Number(ins.meta_puntos)) : defaultMeta;
+    };
+
     for (const otroId of otrosJugadores) {
       await prisma.partida.create({
         data: {
@@ -692,8 +734,8 @@ export async function agregarJugadorAGrupo(grupo_id: string, jugador_id: string)
           jugador_a_id: otroId,
           jugador_b_id: jugador_id,
           total_sets: totalSets,
-          meta_a: defaultMeta,
-          meta_b: defaultMeta,
+          meta_a: metaDe(otroId),
+          meta_b: metaDe(jugador_id),
           limite_entradas: esModoLibre ? null : grupo.fase.torneo.limite_entradas,
           modo_libre: esModoLibre,
           estado: 'pendiente',
@@ -719,7 +761,8 @@ export async function generarPartidasGrupo(grupo_id: string) {
   });
 
   if (!grupo) throw new Error('Grupo no encontrado');
-  if (grupo.partidas.length > 0) throw new Error('Este grupo ya tiene partidas generadas');
+  const parKey = (x: string, y: string) => [x, y].sort().join('|');
+  const paresExistentes = new Set(grupo.partidas.map((p) => parKey(p.jugador_a_id, p.jugador_b_id)));
 
   const jugadores = (grupo.jugadores || [])
     .map((gj) => gj.jugador)
@@ -749,6 +792,7 @@ export async function generarPartidasGrupo(grupo_id: string) {
   const partidasCreadas = [];
   for (let i = 0; i < jugadores.length; i++) {
     for (let j = i + 1; j < jugadores.length; j++) {
+      if (paresExistentes.has(parKey(jugadores[i].id, jugadores[j].id))) continue;
       const metaA = Math.round(Number(metaMap.get(jugadores[i].id) ?? defaultMeta)) || 30;
       const metaB = Math.round(Number(metaMap.get(jugadores[j].id) ?? defaultMeta)) || 30;
       const limiteEntradas = esModoLibre

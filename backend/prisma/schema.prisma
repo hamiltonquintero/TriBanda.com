@@ -220,6 +220,7 @@ model Set {
   ganador_id String?
 
   desempate_oro Boolean @default(false)
+  turno_jugador_id String?
 
   entradas   EntradaSet[]
 }

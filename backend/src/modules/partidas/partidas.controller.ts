@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { AuthRequest } from '../../middlewares/authGuard';
 import * as svc from './partidas.service';
-import { crearPartidaSchema, registrarEntradaSchema, marcadorSchema, cambioTurnoSchema } from './partidas.schema';
+import { crearPartidaSchema, registrarEntradaSchema, marcadorSchema, cambioTurnoSchema, iniciarPartidaSchema } from './partidas.schema';
 
 export async function listarPartidas(req: Request, res: Response, next: NextFunction) {
   try {
@@ -37,7 +37,8 @@ export async function crearPartida(req: Request, res: Response, next: NextFuncti
 
 export async function iniciarPartida(req: AuthRequest, res: Response, next: NextFunction) {
   try {
-    const data = req.body && Object.keys(req.body).length > 0 ? req.body : undefined;
+    const crudo = req.body && Object.keys(req.body).length > 0 ? req.body : undefined;
+    const data = iniciarPartidaSchema.parse(crudo);
     const juez_id = req.user?.rol === 'juez' ? req.user.id : undefined;
     res.json(await svc.iniciarPartida(req.params.id, data, juez_id));
   } catch (err) { next(err); }
