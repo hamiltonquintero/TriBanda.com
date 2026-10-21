@@ -21,7 +21,8 @@ export default function PartidasPage() {
       if (filtroFase) params.set('fase_id', filtroFase);
       return api.get(`/partidas/torneo/${torneoId}?${params}`).then((r) => r.data);
     },
-    refetchInterval: 5000,
+    refetchInterval: 15000,
+    staleTime: 10000,
   });
 
   const { data: fases = [] } = useQuery<Fase[]>({

@@ -44,9 +44,23 @@ export default function DetalleTorneoPage() {
   const togglePago = useMutation({
     mutationFn: ({ inscripcionId, pago }: { inscripcionId: string; pago: boolean }) =>
       api.put(`/inscripciones/meta/${inscripcionId}`, { pago_confirmado: pago }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['inscripciones-torneo', id] }),
+    onMutate: async ({ inscripcionId, pago }) => {
+      await qc.cancelQueries({ queryKey: ['inscripciones-torneo', id] });
+      const previo = qc.getQueryData<InscripcionTorneo[]>(['inscripciones-torneo', id]);
+      qc.setQueryData<InscripcionTorneo[]>(['inscripciones-torneo', id], (old = []) =>
+        old.map((ins) => (ins.id === inscripcionId ? { ...ins, pago_confirmado: pago } : ins))
+      );
+      return { previo };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previo) {
+        qc.setQueryData(['inscripciones-torneo', id], context.previo);
+      }
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['inscripciones-torneo', id] });
+    },
   });
-
 
   const inscribirLoteMut = useMutation({
     mutationFn: (jugador_ids: string[]) => api.post(`/inscripciones/${id}/lote`, { jugador_ids }),
@@ -64,12 +78,22 @@ export default function DetalleTorneoPage() {
 
   const removerInscripcionMut = useMutation({
     mutationFn: (jugadorId: string) => api.delete(`/inscripciones/${id}/${jugadorId}`),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['inscripciones-torneo', id] });
-      alert('Inscripción removida del torneo.');
+    onMutate: async (jugadorId) => {
+      await qc.cancelQueries({ queryKey: ['inscripciones-torneo', id] });
+      const previo = qc.getQueryData<InscripcionTorneo[]>(['inscripciones-torneo', id]);
+      qc.setQueryData<InscripcionTorneo[]>(['inscripciones-torneo', id], (old = []) =>
+        old.filter((ins) => ins.jugador_id !== jugadorId)
+      );
+      return { previo };
     },
-    onError: (err: any) => {
+    onError: (err: any, _vars, context) => {
+      if (context?.previo) {
+        qc.setQueryData(['inscripciones-torneo', id], context.previo);
+      }
       alert(err.response?.data?.error || 'Error al remover inscripción');
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['inscripciones-torneo', id] });
     },
   });
 

@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { useState } from 'react';
 import api from '../services/api';
-import { BracketData, Fase, Grupo, InscripcionTorneo, Partida, Torneo } from '../types';
+import { BracketData, Grupo, InscripcionTorneo, Partida, Torneo } from '../types';
 
 interface GuiaInteractivaAdminProps {
   torneo: Torneo;
@@ -18,35 +18,10 @@ export default function GuiaInteractivaAdmin({
   const [expandido, setExpandido] = useState<boolean>(true);
   const torneoId = torneo.id;
 
-  // Consultar fases del torneo
-  const { data: fases = [] } = useQuery<Fase[]>({
-    queryKey: ['fases', torneoId],
-    queryFn: () => api.get(`/torneos/${torneoId}/fases`).then((r) => r.data),
-  });
-
+  // 1. Usar fases y grupos precargados en el objeto torneo (Cero peticiones extra)
+  const fases = torneo.fases || [];
   const faseGrupos = fases.find((f) => f.tipo === 'grupos');
-
-  // Consultar grupos si hay fase de grupos
-  const { data: grupos = [] } = useQuery<Grupo[]>({
-    queryKey: ['grupos', faseGrupos?.id],
-    queryFn: () => api.get(`/grupos/${faseGrupos!.id}`).then((r) => r.data),
-    enabled: !!faseGrupos?.id,
-  });
-
-  // Consultar partidas del torneo
-  const { data: partidas = [] } = useQuery<Partida[]>({
-    queryKey: ['partidas', torneoId],
-    queryFn: () => api.get(`/partidas/torneo/${torneoId}`).then((r) => r.data),
-    refetchInterval: 8000,
-  });
-
-  // Consultar bracket
-  const { data: bracket } = useQuery<BracketData>({
-    queryKey: ['bracket', torneoId],
-    queryFn: () => api.get(`/torneos/${torneoId}/bracket`).then((r) => r.data),
-  });
-
-  // ─── CÁLCULO INTELIGENTE DEL ESTADO Y PASO ACTUAL ───────────────────────────
+  const grupos: Grupo[] = faseGrupos?.grupos || [];
 
   const totalInscritos = inscripciones.length;
   const pagadosCount = inscripciones.filter((i) => i.pago_confirmado).length;
@@ -54,11 +29,28 @@ export default function GuiaInteractivaAdmin({
   const gruposConJugadores = grupos.filter((g) => g.jugadores && g.jugadores.length > 0).length;
   const gruposListos = grupos.length > 0 && gruposConJugadores === grupos.length;
 
+  // 2. Consultar partidas SOLO si los grupos ya están sorteados (Paso 3)
+  // Sin refetchInterval para evitar bloqueos y consumo excesivo
+  const { data: partidas = [] } = useQuery<Partida[]>({
+    queryKey: ['partidas', torneoId],
+    queryFn: () => api.get(`/partidas/torneo/${torneoId}`).then((r) => r.data),
+    enabled: gruposListos,
+    staleTime: 30000,
+  });
+
   const partidasGrupo = partidas.filter((p) => p.grupo_id !== null);
   const totalPartidasGrupo = partidasGrupo.length;
   const partidasFinalizadas = partidasGrupo.filter((p) => p.estado === 'finalizada').length;
   const partidasEnJuego = partidasGrupo.filter((p) => p.estado === 'en_curso').length;
   const gruposCompletados = totalPartidasGrupo > 0 && partidasFinalizadas === totalPartidasGrupo;
+
+  // 3. Consultar bracket SOLO si los grupos ya se completaron (Paso 4)
+  const { data: bracket } = useQuery<BracketData>({
+    queryKey: ['bracket', torneoId],
+    queryFn: () => api.get(`/torneos/${torneoId}/bracket`).then((r) => r.data),
+    enabled: gruposCompletados,
+    staleTime: 30000,
+  });
 
   const bracketGenerado = (bracket?.rondas?.length ?? 0) > 0;
   const tieneCampeon = Boolean(bracket?.campeon);

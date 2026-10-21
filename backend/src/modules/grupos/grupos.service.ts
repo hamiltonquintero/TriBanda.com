@@ -1,27 +1,11 @@
 import prisma from '../../config/prisma';
 
-// ─── TABLA DE POSICIONES ─────────────────────────────────────────────────────
+// ─── TABLA DE POSICIONES EN MEMORIA (Cero Queries Adicionales) ───────────────
 
-export async function calcularTablaGrupo(grupo_id: string) {
-  const grupo = await prisma.grupo.findUnique({
-    where: { id: grupo_id },
-    include: {
-      jugadores: { include: { jugador: { include: { club: true } } } },
-      partidas: {
-        where: { estado: 'finalizada' },
-        include: {
-          sets: { include: { entradas: true } },
-          jugador_a: true,
-          jugador_b: true,
-          ganador: true,
-        },
-      },
-    },
-  });
+export function calcularTablaDeGrupoEnMemoria(grupo: any) {
+  const finalizadas = (grupo.partidas || []).filter((p: any) => p.estado === 'finalizada');
 
-  if (!grupo) throw new Error('Grupo no encontrado');
-
-  const tabla = grupo.jugadores.map(({ jugador }) => {
+  const tabla = (grupo.jugadores || []).map(({ jugador }: any) => {
     let puntos = 0;
     let sets_ganados = 0;
     let sets_perdidos = 0;
@@ -30,7 +14,7 @@ export async function calcularTablaGrupo(grupo_id: string) {
     let mayor_serie = 0;
     const promediosPartidas: number[] = [];
 
-    for (const partida of grupo.partidas) {
+    for (const partida of finalizadas) {
       const esA = partida.jugador_a_id === jugador.id;
       const esB = partida.jugador_b_id === jugador.id;
       if (!esA && !esB) continue;
@@ -41,12 +25,12 @@ export async function calcularTablaGrupo(grupo_id: string) {
       let carambolasPartida = 0;
       let entradasPartida = 0;
 
-      for (const set of partida.sets) {
+      for (const set of (partida.sets || [])) {
         const esGanadorSet = set.ganador_id === jugador.id;
         if (esGanadorSet) sets_ganados++;
         else if (set.ganador_id) sets_perdidos++;
 
-        for (const entrada of set.entradas) {
+        for (const entrada of (set.entradas || [])) {
           if (entrada.jugador_id === jugador.id) {
             carambolas += entrada.carambolas;
             entradas++;
@@ -82,14 +66,8 @@ export async function calcularTablaGrupo(grupo_id: string) {
     };
   });
 
-  // Orden oficial UMB / Fecolbi (Regla del Cliente):
-  // 1° Puntos DESC
-  // 2° Promedio General DESC
-  // 3° Promedio Particular (individual) DESC
-  // 4° Mayor Serie DESC
-  // 5° Carambolas totales DESC
-  // 6° Entradas totales ASC
-  tabla.sort((a, b) => {
+  // Orden oficial UMB / Fecolbi:
+  tabla.sort((a: any, b: any) => {
     if (b.puntos !== a.puntos) return b.puntos - a.puntos;
     if (b.promedio !== a.promedio) return b.promedio - a.promedio;
     if (b.promedio_particular !== a.promedio_particular) return b.promedio_particular - a.promedio_particular;
@@ -98,10 +76,31 @@ export async function calcularTablaGrupo(grupo_id: string) {
     return a.entradas - b.entradas;
   });
 
-  return tabla.map((fila, idx) => ({ ...fila, posicion: idx + 1 }));
+  return tabla.map((fila: any, idx: number) => ({ ...fila, posicion: idx + 1 }));
 }
 
-// ─── LISTAR GRUPOS ───────────────────────────────────────────────────────────
+export async function calcularTablaGrupo(grupo_id: string) {
+  const grupo = await prisma.grupo.findUnique({
+    where: { id: grupo_id },
+    include: {
+      jugadores: { include: { jugador: { include: { club: true } } } },
+      partidas: {
+        where: { estado: 'finalizada' },
+        include: {
+          sets: { include: { entradas: true } },
+          jugador_a: true,
+          jugador_b: true,
+          ganador: true,
+        },
+      },
+    },
+  });
+
+  if (!grupo) throw new Error('Grupo no encontrado');
+  return calcularTablaDeGrupoEnMemoria(grupo);
+}
+
+// ─── LISTAR GRUPOS (Optimizada a 1 Sola Query) ───────────────────────────────
 
 export async function listarGrupos(fase_id: string) {
   const grupos = await prisma.grupo.findMany({
@@ -113,23 +112,20 @@ export async function listarGrupos(fase_id: string) {
           jugador_a: true,
           jugador_b: true,
           ganador: true,
+          sets: { include: { entradas: true } },
         },
       },
     },
     orderBy: { numero: 'asc' },
   });
 
-  const result = await Promise.all(
-    grupos.map(async (g) => ({
-      ...g,
-      tabla: await calcularTablaGrupo(g.id),
-    }))
-  );
-
-  return result;
+  return grupos.map((g) => ({
+    ...g,
+    tabla: calcularTablaDeGrupoEnMemoria(g),
+  }));
 }
 
-// ─── OBTENER GRUPO ───────────────────────────────────────────────────────────
+// ─── OBTENER GRUPO (Optimizada sin Re-Query) ──────────────────────────────────
 
 export async function obtenerGrupo(id: string) {
   const grupo = await prisma.grupo.findUnique({
@@ -151,7 +147,7 @@ export async function obtenerGrupo(id: string) {
 
   if (!grupo) throw new Error('Grupo no encontrado');
 
-  const tabla = await calcularTablaGrupo(id);
+  const tabla = calcularTablaDeGrupoEnMemoria(grupo);
   return { ...grupo, tabla };
 }
 
@@ -430,36 +426,42 @@ export async function obtenerClasificados(fase_id: string, clasificadosPorGrupoO
   const grupos = await prisma.grupo.findMany({
     where: { fase_id },
     include: {
-      jugadores: { include: { jugador: true } },
+      jugadores: { include: { jugador: { include: { club: true } } } },
+      partidas: {
+        include: {
+          jugador_a: true,
+          jugador_b: true,
+          ganador: true,
+          sets: { include: { entradas: true } },
+        },
+      },
     },
     orderBy: { numero: 'asc' },
   });
 
   const clasificadosPorGrupo = clasificadosPorGrupoOverride ?? fase.clasificados_por_grupo ?? 2;
 
-  // 1. Obtener clasificados por cada grupo
-  const gruposConClasificados = await Promise.all(
-    grupos.map(async (g) => {
-      const tabla = await calcularTablaGrupo(g.id);
-      // Tomar hasta N clasificados según regla (ej. 2 mejores por grupo)
-      const cantClasifican = Math.min(clasificadosPorGrupo, tabla.length);
-      const clasificadosDelGrupo = tabla.slice(0, cantClasifican).map((fila) => ({
-        ...fila,
-        grupo_id: g.id,
-        grupo_numero: g.numero,
-        grupo_letra: g.letra,
-        posicion_en_grupo: fila.posicion,
-      }));
+  // 1. Obtener clasificados por cada grupo (Cálculo directo en memoria)
+  const gruposConClasificados = grupos.map((g) => {
+    const tabla = calcularTablaDeGrupoEnMemoria(g);
+    // Tomar hasta N clasificados según regla (ej. 2 mejores por grupo)
+    const cantClasifican = Math.min(clasificadosPorGrupo, tabla.length);
+    const clasificadosDelGrupo = tabla.slice(0, cantClasifican).map((fila: any) => ({
+      ...fila,
+      grupo_id: g.id,
+      grupo_numero: g.numero,
+      grupo_letra: g.letra,
+      posicion_en_grupo: fila.posicion,
+    }));
 
-      return {
-        grupo_id: g.id,
-        grupo_numero: g.numero,
-        grupo_letra: g.letra,
-        tabla,
-        clasificados: clasificadosDelGrupo,
-      };
-    })
-  );
+    return {
+      grupo_id: g.id,
+      grupo_numero: g.numero,
+      grupo_letra: g.letra,
+      tabla,
+      clasificados: clasificadosDelGrupo,
+    };
+  });
 
   // 2. Unificar en Tabla General de Clasificados (como en el Excel "L. GENERAL")
   const todosClasificados = gruposConClasificados.flatMap((g) => g.clasificados);

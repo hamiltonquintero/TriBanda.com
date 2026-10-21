@@ -55,6 +55,7 @@ export interface Fase {
   torneo_id: string;
   clasificados_por_grupo?: number;
   torneo?: Torneo;
+  grupos?: Grupo[];
 }
 
 export interface Torneo {
