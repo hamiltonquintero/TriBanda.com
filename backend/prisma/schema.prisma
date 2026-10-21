@@ -219,6 +219,8 @@ model Set {
   ganador    Jugador? @relation("GanadorSet", fields: [ganador_id], references: [id])
   ganador_id String?
 
+  desempate_oro Boolean @default(false)
+
   entradas   EntradaSet[]
 }
 

@@ -5,6 +5,46 @@ import { recalcularRankingCompleto } from '../ranking/ranking.service';
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
+export function evaluarResultadoSet(
+  sumaA: number,
+  sumaB: number,
+  metaA: number | null,
+  metaB: number | null
+): { ganador_posible: 'a' | 'b' | null; es_empate: boolean } {
+  const mA = metaA ?? 10;
+  const mB = metaB ?? 10;
+  const alcanzoA = sumaA >= mA;
+  const alcanzoB = sumaB >= mB;
+
+  if (alcanzoA && !alcanzoB) {
+    return { ganador_posible: 'a', es_empate: false };
+  }
+  if (alcanzoB && !alcanzoA) {
+    return { ganador_posible: 'b', es_empate: false };
+  }
+
+  // Si ninguno alcanzó la meta o ambos alcanzaron la meta en la misma entrada:
+  // Se evalúa la ventaja reglamentaria de handicap
+  if (mB > mA) {
+    const ventaja = mB - mA;
+    const diff = sumaB - sumaA;
+    if (diff > ventaja) return { ganador_posible: 'b', es_empate: false };
+    if (diff < ventaja) return { ganador_posible: 'a', es_empate: false };
+    return { ganador_posible: null, es_empate: true };
+  } else if (mA > mB) {
+    const ventaja = mA - mB;
+    const diff = sumaA - sumaB;
+    if (diff > ventaja) return { ganador_posible: 'a', es_empate: false };
+    if (diff < ventaja) return { ganador_posible: 'b', es_empate: false };
+    return { ganador_posible: null, es_empate: true };
+  } else {
+    // Mismo handicap
+    if (sumaA > sumaB) return { ganador_posible: 'a', es_empate: false };
+    if (sumaB > sumaA) return { ganador_posible: 'b', es_empate: false };
+    return { ganador_posible: null, es_empate: true };
+  }
+}
+
 async function calcularGanadorSet(set_id: string): Promise<string | null> {
   const set = await prisma.set.findUnique({
     where: { id: set_id },
@@ -12,27 +52,24 @@ async function calcularGanadorSet(set_id: string): Promise<string | null> {
   });
   if (!set) return null;
 
+  // Si el set ya fue definido por Carambola de Oro u otro desempate manual, mantenerlo
+  if (set.desempate_oro && set.ganador_id) {
+    return set.ganador_id;
+  }
+
   const { jugador_a_id, jugador_b_id, meta_a, meta_b } = set.partida;
   const sumaA = set.entradas.filter((e) => e.jugador_id === jugador_a_id).reduce((acc, e) => acc + e.carambolas, 0);
   const sumaB = set.entradas.filter((e) => e.jugador_id === jugador_b_id).reduce((acc, e) => acc + e.carambolas, 0);
 
-  let ganador_id: string;
-  if (meta_a && meta_b) {
-    const alcanzoA = sumaA >= meta_a;
-    const alcanzoB = sumaB >= meta_b;
-    if (alcanzoA && !alcanzoB) {
-      ganador_id = jugador_a_id;
-    } else if (alcanzoB && !alcanzoA) {
-      ganador_id = jugador_b_id;
-    } else {
-      const pctA = sumaA / meta_a;
-      const pctB = sumaB / meta_b;
-      ganador_id = pctA >= pctB ? jugador_a_id : jugador_b_id;
-    }
-  } else {
-    ganador_id = sumaA >= sumaB ? jugador_a_id : jugador_b_id;
+  const { ganador_posible, es_empate } = evaluarResultadoSet(sumaA, sumaB, meta_a, meta_b);
+
+  if (es_empate) {
+    // Empate exacto: no se asigna ganador automáticamente, queda pendiente para Carambola de Oro
+    await prisma.set.update({ where: { id: set_id }, data: { ganador_id: null } });
+    return null;
   }
 
+  const ganador_id = ganador_posible === 'a' ? jugador_a_id : jugador_b_id;
   await prisma.set.update({ where: { id: set_id }, data: { ganador_id } });
   return ganador_id;
 }
@@ -405,9 +442,13 @@ export async function obtenerMarcador(id: string) {
     const countContra = set.entradas.filter((e) => e.jugador_id === jugadorContraId).length;
     const turnoJugadorId = countSalida <= countContra ? jugadorSalidaId : jugadorContraId;
 
+    const { es_empate } = evaluarResultadoSet(carambolasA, carambolasB, partida.meta_a, partida.meta_b);
+
     return {
       numero: set.numero,
       ganador_id: set.ganador_id,
+      desempate_oro: !!set.desempate_oro,
+      es_empate: es_empate && !set.ganador_id,
       jugador_salida_id: jugadorSalidaId,
       turno_jugador_id: turnoJugadorId,
       carambolas_a: carambolasA,
@@ -465,6 +506,62 @@ export async function finalizarSet(partida_id: string, set_numero: number) {
 
   await calcularGanadorSet(set.id);
   await calcularGanadorPartida(partida_id);
+  return obtenerMarcador(partida_id);
+}
+
+// ─── DESEMPATE POR CARAMBOLA DE ORO ─────────────────────────────────────────
+
+export async function resolverDesempateSet(
+  partida_id: string,
+  set_numero: number,
+  ganador_id: string,
+  usuario_id?: string
+) {
+  const partida = await prisma.partida.findUnique({
+    where: { id: partida_id },
+    include: { sets: true },
+  });
+  if (!partida) throw new Error('Partida no encontrada');
+  if (ganador_id !== partida.jugador_a_id && ganador_id !== partida.jugador_b_id) {
+    throw new Error('El ganador debe ser uno de los dos jugadores de la partida');
+  }
+
+  const set = partida.sets.find((s) => s.numero === set_numero);
+  if (!set) throw new Error(`Set ${set_numero} no encontrado`);
+
+  // Actualizar el ganador del set con bandera de desempate_oro = true
+  await prisma.set.update({
+    where: { id: set.id },
+    data: {
+      ganador_id,
+      desempate_oro: true,
+    },
+  });
+
+  // Registrar en el audit_log
+  const logPrevio = Array.isArray(partida.audit_log) ? (partida.audit_log as any[]) : [];
+  const nuevoLog = [
+    ...logPrevio,
+    {
+      evento: 'desempate_carambola_oro',
+      set_numero,
+      ganador_id,
+      usuario_id: usuario_id || null,
+      timestamp: new Date().toISOString(),
+      descripcion: `Set ${set_numero} definido por Carambola de Oro a favor de ${
+        ganador_id === partida.jugador_a_id ? 'Jugador A' : 'Jugador B'
+      }`,
+    },
+  ];
+
+  await prisma.partida.update({
+    where: { id: partida_id },
+    data: { audit_log: nuevoLog },
+  });
+
+  // Recalcular si ya se define la partida
+  await calcularGanadorPartida(partida_id);
+
   return obtenerMarcador(partida_id);
 }
 
@@ -647,7 +744,11 @@ export async function obtenerPlanilla(id: string) {
     });
 
     return {
-      numero: set.numero, ganador_id: set.ganador_id, ganador: set.ganador, filas,
+      numero: set.numero,
+      ganador_id: set.ganador_id,
+      ganador: set.ganador,
+      desempate_oro: set.desempate_oro,
+      filas,
       total_carambolas_a: entradasA.reduce((acc, e) => acc + e.carambolas, 0),
       total_carambolas_b: entradasB.reduce((acc, e) => acc + e.carambolas, 0),
     };

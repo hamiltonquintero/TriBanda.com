@@ -27,6 +27,7 @@ router.post('/:id/entrada', authGuard, roleGuard('juez', 'admin'), ctrl.registra
 router.post('/:id/marcador', authGuard, roleGuard('juez', 'admin'), ctrl.marcadorAccion);
 router.post('/:id/turno', authGuard, roleGuard('juez', 'admin'), ctrl.cambioTurno);
 router.patch('/:id/set/:set_numero/finalizar', authGuard, roleGuard('juez', 'admin'), ctrl.finalizarSet);
+router.patch('/:id/set/:set_numero/desempate', authGuard, roleGuard('juez', 'admin'), ctrl.resolverDesempateSet);
 router.patch('/:id/confirmar', authGuard, roleGuard('juez', 'admin'), ctrl.confirmarPartida);
 router.post('/:id/solicitar-correccion', authGuard, roleGuard('juez', 'admin'), ctrl.solicitarCorreccion);
 

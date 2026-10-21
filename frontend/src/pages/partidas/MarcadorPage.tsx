@@ -6,7 +6,11 @@ import { useAuthStore } from '../../store/authStore';
 
 interface MarcadorSet {
   numero: number;
-  ganador_id?: string;
+  ganador_id?: string | null;
+  desempate_oro?: boolean;
+  es_empate?: boolean;
+  jugador_salida_id?: string;
+  turno_jugador_id?: string;
   carambolas_a: number;
   carambolas_b: number;
   entradas_a: number;
@@ -45,6 +49,7 @@ export default function MarcadorPage() {
   const [setActivo, setSetActivo] = useState(1);
   const [mostrarModalInicio, setMostrarModalInicio] = useState(false);
   const [modalCambiarJuez, setModalCambiarJuez] = useState(false);
+  const [modalDesempateOro, setModalDesempateOro] = useState(false);
 
   // Estados para el protocolo previo de inicio
   const [salidaJugadorId, setSalidaJugadorId] = useState<string>('');
@@ -245,21 +250,21 @@ export default function MarcadorPage() {
 
       const sets = previo.sets.map((s) => {
         if (s.numero !== set_numero) return s;
+        const actualTurno = s.turno_jugador_id || (
+          set_numero % 2 === 1
+            ? (previo.jugador_salida_id || previo.jugador_a.id)
+            : (previo.jugador_salida_id === previo.jugador_a.id ? previo.jugador_b.id : previo.jugador_a.id)
+        );
+        const nuevoTurno = actualTurno === previo.jugador_a.id ? previo.jugador_b.id : previo.jugador_a.id;
         return {
           ...s,
-          entradas_a: s.entradas_a + 1,
-          entradas_b: s.entradas_b + 1,
+          turno_jugador_id: nuevoTurno,
         };
       });
 
       const optimistic: MarcadorData = {
         ...previo,
         sets,
-        resumen: {
-          ...previo.resumen,
-          entradas_a: previo.resumen.entradas_a + 1,
-          entradas_b: previo.resumen.entradas_b + 1,
-        },
       };
 
       qc.setQueryData<MarcadorData>(['marcador', id], optimistic);
@@ -274,6 +279,19 @@ export default function MarcadorPage() {
       if (context?.previo) {
         qc.setQueryData(['marcador', id], context.previo);
       }
+    },
+  });
+
+  const desempateOroMut = useMutation({
+    mutationFn: (data: { set_numero: number; ganador_id: string }) =>
+      api.patch(`/partidas/${id}/set/${data.set_numero}/desempate`, { ganador_id: data.ganador_id }),
+    onSuccess: (res) => {
+      setModalDesempateOro(false);
+      if (res?.data) qc.setQueryData(['marcador', id], res.data);
+      else qc.invalidateQueries({ queryKey: ['marcador', id] });
+    },
+    onError: (err: any) => {
+      alert(err.response?.data?.error || 'Error al registrar desempate por Carambola de Oro');
     },
   });
 
@@ -302,6 +320,24 @@ export default function MarcadorPage() {
   const meta_b = marcador.meta_b;
   const setData = sets.find((s) => s.numero === setActivo);
   const puedeEditar = estado === 'en_curso' && !confirmada && hasRole('admin', 'juez');
+
+  // Alternancia reglamentaria de bolas y salida por set:
+  const esSetImpar = setActivo % 2 === 1;
+  const lagWinnerId = marcador.jugador_salida_id || jugador_a.id;
+  const jugadorSalidaSetId = setData?.jugador_salida_id || (
+    esSetImpar ? lagWinnerId : (lagWinnerId === jugador_a.id ? jugador_b.id : jugador_a.id)
+  );
+
+  // Bola asignada para este set: quien tiene la salida juega con BOLA BLANCA ⚪, el rival con BOLA AMARILLA 🟡:
+  const bolaSetA: 'blanca' | 'amarilla' = jugadorSalidaSetId === jugador_a.id ? 'blanca' : 'amarilla';
+  const bolaSetB: 'blanca' | 'amarilla' = jugadorSalidaSetId === jugador_b.id ? 'blanca' : 'amarilla';
+  const tieneSalidaA = jugadorSalidaSetId === jugador_a.id;
+  const tieneSalidaB = jugadorSalidaSetId === jugador_b.id;
+
+  // Turno de tiro activo (cuadro amarillo marca de agua):
+  const turnoActualId = setData?.turno_jugador_id || jugadorSalidaSetId;
+  const esTurnoA = puedeEditar && !setData?.ganador_id && turnoActualId === jugador_a.id;
+  const esTurnoB = puedeEditar && !setData?.ganador_id && turnoActualId === jugador_b.id;
 
   return (
     <div className="max-w-2xl mx-auto">
@@ -703,14 +739,31 @@ export default function MarcadorPage() {
 
         <div className="grid grid-cols-3 gap-4 items-center text-center text-white">
           {/* Jugador A */}
-          <div className="relative">
-            <div className="inline-flex items-center gap-1.5 bg-black/30 backdrop-blur-sm px-2.5 py-0.5 rounded-full text-xs mb-2 border border-white/10">
-              <span>{marcador.color_bola_a === 'amarilla' ? '🟡' : '⚪'}</span>
-              <span className="text-[11px] font-semibold uppercase">{marcador.color_bola_a ?? 'blanca'}</span>
-              {marcador.jugador_salida_id === jugador_a.id && <span className="text-emerald-400 font-bold">🎯 Salida</span>}
+          <div
+            className={`relative rounded-2xl p-3 sm:p-4 transition-all duration-300 ${
+              esTurnoA
+                ? 'border-2 border-yellow-400 bg-yellow-400/20 shadow-[0_0_25px_rgba(250,204,21,0.35)] ring-4 ring-yellow-400/40 scale-[1.02]'
+                : 'border border-white/10 bg-black/20 opacity-85'
+            }`}
+          >
+            {/* Indicador de turno: Marca de agua / Badge amarillo */}
+            {esTurnoA && (
+              <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 z-10 animate-bounce">
+                <span className="bg-yellow-400 text-yellow-950 font-black text-[10px] sm:text-[11px] px-3 py-0.5 rounded-full shadow-md uppercase tracking-wider flex items-center gap-1 whitespace-nowrap">
+                  <span>🎱</span> En Turno
+                </span>
+              </div>
+            )}
+
+            <div className="inline-flex items-center gap-1.5 bg-black/40 backdrop-blur-sm px-2.5 py-0.5 rounded-full text-xs mb-2 border border-white/10">
+              <span>{bolaSetA === 'amarilla' ? '🟡' : '⚪'}</span>
+              <span className="text-[11px] font-semibold uppercase">{bolaSetA}</span>
+              {tieneSalidaA && <span className="text-emerald-400 font-bold">🎯 Salida</span>}
             </div>
 
-            {jugador_a.foto_url && <img src={jugador_a.foto_url} alt="" className="w-16 h-16 rounded-full mx-auto mb-2 object-cover" />}
+            {jugador_a.foto_url && (
+              <img src={jugador_a.foto_url} alt="" className="w-16 h-16 rounded-full mx-auto mb-2 object-cover border border-white/20 shadow" />
+            )}
             <p className="font-bold text-lg leading-tight">{jugador_a.nombre_completo}</p>
             {jugador_a.alias && <p className="text-gray-300 text-xs mt-0.5">"{jugador_a.alias}"</p>}
             <p className="text-5xl font-extrabold mt-3 text-yellow-400 drop-shadow">{setData?.carambolas_a ?? 0}</p>
@@ -727,9 +780,12 @@ export default function MarcadorPage() {
 
           {/* Centro */}
           <div>
-            <div className="bg-black/30 backdrop-blur-sm inline-block px-3 py-1 rounded-full text-gray-200 text-xs mb-2 border border-white/10">
+            <div className="bg-black/40 backdrop-blur-sm inline-block px-3 py-1 rounded-full text-gray-200 text-xs mb-1.5 border border-white/10">
               {estado === 'finalizada' ? '🏁 Partida Finalizada' : total_sets === 1 ? '🏁 Set Único Directo' : `Set ${setActivo} de ${total_sets}`}
             </div>
+            <p className="text-[11px] text-emerald-300 font-medium mb-2">
+              Salida Set {setActivo}: <strong className="text-white">{tieneSalidaA ? jugador_a.nombre_completo : jugador_b.nombre_completo}</strong> (⚪)
+            </p>
             {total_sets > 1 ? (
               <>
                 <p className="text-3xl font-extrabold tracking-wide">{resumen.sets_ganados_a} — {resumen.sets_ganados_b}</p>
@@ -744,14 +800,31 @@ export default function MarcadorPage() {
           </div>
 
           {/* Jugador B */}
-          <div className="relative">
-            <div className="inline-flex items-center gap-1.5 bg-black/30 backdrop-blur-sm px-2.5 py-0.5 rounded-full text-xs mb-2 border border-white/10">
-              <span>{marcador.color_bola_b === 'blanca' ? '⚪' : '🟡'}</span>
-              <span className="text-[11px] font-semibold uppercase">{marcador.color_bola_b ?? 'amarilla'}</span>
-              {marcador.jugador_salida_id === jugador_b.id && <span className="text-amber-300 font-bold">🎯 Salida</span>}
+          <div
+            className={`relative rounded-2xl p-3 sm:p-4 transition-all duration-300 ${
+              esTurnoB
+                ? 'border-2 border-yellow-400 bg-yellow-400/20 shadow-[0_0_25px_rgba(250,204,21,0.35)] ring-4 ring-yellow-400/40 scale-[1.02]'
+                : 'border border-white/10 bg-black/20 opacity-85'
+            }`}
+          >
+            {/* Indicador de turno: Marca de agua / Badge amarillo */}
+            {esTurnoB && (
+              <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 z-10 animate-bounce">
+                <span className="bg-yellow-400 text-yellow-950 font-black text-[10px] sm:text-[11px] px-3 py-0.5 rounded-full shadow-md uppercase tracking-wider flex items-center gap-1 whitespace-nowrap">
+                  <span>🎱</span> En Turno
+                </span>
+              </div>
+            )}
+
+            <div className="inline-flex items-center gap-1.5 bg-black/40 backdrop-blur-sm px-2.5 py-0.5 rounded-full text-xs mb-2 border border-white/10">
+              <span>{bolaSetB === 'amarilla' ? '🟡' : '⚪'}</span>
+              <span className="text-[11px] font-semibold uppercase">{bolaSetB}</span>
+              {tieneSalidaB && <span className="text-amber-300 font-bold">🎯 Salida</span>}
             </div>
 
-            {jugador_b.foto_url && <img src={jugador_b.foto_url} alt="" className="w-16 h-16 rounded-full mx-auto mb-2 object-cover" />}
+            {jugador_b.foto_url && (
+              <img src={jugador_b.foto_url} alt="" className="w-16 h-16 rounded-full mx-auto mb-2 object-cover border border-white/20 shadow" />
+            )}
             <p className="font-bold text-lg leading-tight">{jugador_b.nombre_completo}</p>
             {jugador_b.alias && <p className="text-gray-300 text-xs mt-0.5">"{jugador_b.alias}"</p>}
             <p className="text-5xl font-extrabold mt-3 text-yellow-400 drop-shadow">{setData?.carambolas_b ?? 0}</p>
@@ -772,45 +845,96 @@ export default function MarcadorPage() {
           <div className="grid grid-cols-3 gap-4 mt-6">
             <div className="flex flex-col gap-2">
               <button onClick={() => sumar.mutate({ jugador_id: jugador_a.id, set_numero: setActivo })}
-                className="bg-green-600 hover:bg-green-700 text-white text-2xl font-bold py-4 rounded-xl transition shadow">+1</button>
+                className="bg-green-600 hover:bg-green-700 text-white text-2xl font-bold py-4 rounded-xl transition shadow active:scale-95">+1</button>
               <button onClick={() => restar.mutate({ jugador_id: jugador_a.id, set_numero: setActivo })}
-                className="bg-red-600 hover:bg-red-700 text-white text-lg font-bold py-2 rounded-xl transition">-1</button>
+                className="bg-red-600 hover:bg-red-700 text-white text-lg font-bold py-2 rounded-xl transition active:scale-95">-1</button>
             </div>
             <div className="flex items-center justify-center">
               <button onClick={() => turno.mutate(setActivo)}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-3 rounded-xl text-sm font-medium transition shadow">
-                Cambio de turno
+                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-3 rounded-xl text-sm font-semibold transition shadow flex items-center gap-1.5 active:scale-95">
+                <span>🔄</span> Cambio de turno
               </button>
             </div>
             <div className="flex flex-col gap-2">
               <button onClick={() => sumar.mutate({ jugador_id: jugador_b.id, set_numero: setActivo })}
-                className="bg-green-600 hover:bg-green-700 text-white text-2xl font-bold py-4 rounded-xl transition shadow">+1</button>
+                className="bg-green-600 hover:bg-green-700 text-white text-2xl font-bold py-4 rounded-xl transition shadow active:scale-95">+1</button>
               <button onClick={() => restar.mutate({ jugador_id: jugador_b.id, set_numero: setActivo })}
-                className="bg-red-600 hover:bg-red-700 text-white text-lg font-bold py-2 rounded-xl transition">-1</button>
+                className="bg-red-600 hover:bg-red-700 text-white text-lg font-bold py-2 rounded-xl transition active:scale-95">-1</button>
             </div>
           </div>
         )}
 
-        {/* Finalizar set o partida */}
+        {/* Panel de Desempate: Carambola de Oro (cuando hay empate exacto por handicap al límite de entradas) */}
+        {setData && setData.es_empate && !setData.ganador_id && (
+          <div className="mt-5 bg-gradient-to-r from-amber-950/90 via-yellow-950/95 to-amber-950/90 backdrop-blur-md border-2 border-yellow-400 rounded-2xl p-5 text-center text-white shadow-2xl animate-fade-in">
+            <div className="inline-flex items-center gap-2 bg-yellow-400 text-yellow-950 text-xs font-black px-3.5 py-1 rounded-full uppercase tracking-wider mb-2 shadow">
+              <span>⚔️</span> Set Empatado (Reglamento de Handicap)
+            </div>
+            <h3 className="text-lg font-black text-yellow-300 mb-1">
+              Desempate: Carambola de Oro
+            </h3>
+            <p className="text-xs text-yellow-100/90 max-w-md mx-auto mb-4 leading-relaxed">
+              Ambos deportistas igualaron según su ventaja reglamentaria de handicap ({setData.carambolas_a} vs {setData.carambolas_b}).
+              Cada jugador ejecuta un tiro inicial ilimitado en la mesa. <strong>El juez declara al ganador del set:</strong>
+            </p>
+
+            {puedeEditar ? (
+              <div className="grid grid-cols-2 gap-3 max-w-md mx-auto">
+                <button
+                  type="button"
+                  onClick={() => desempateOroMut.mutate({ set_numero: setActivo, ganador_id: jugador_a.id })}
+                  disabled={desempateOroMut.isPending}
+                  className="bg-yellow-400 hover:bg-yellow-300 text-yellow-950 font-black py-3 px-3 rounded-xl shadow-lg transition flex items-center justify-center gap-1.5 text-xs sm:text-sm active:scale-95"
+                >
+                  <span>🏅</span> Ganó {jugador_a.nombre_completo}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => desempateOroMut.mutate({ set_numero: setActivo, ganador_id: jugador_b.id })}
+                  disabled={desempateOroMut.isPending}
+                  className="bg-yellow-400 hover:bg-yellow-300 text-yellow-950 font-black py-3 px-3 rounded-xl shadow-lg transition flex items-center justify-center gap-1.5 text-xs sm:text-sm active:scale-95"
+                >
+                  <span>🏅</span> Ganó {jugador_b.nombre_completo}
+                </button>
+              </div>
+            ) : (
+              <p className="text-xs text-yellow-300/80 italic">A la espera de la resolución del juez oficial en mesa...</p>
+            )}
+          </div>
+        )}
+
+        {/* Acciones de set: Finalizar / Desempate Carambola de Oro Opcional */}
         {puedeEditar && setData && !setData.ganador_id && (
-          <div className="text-center mt-5">
+          <div className="flex flex-wrap items-center justify-center gap-2 mt-5">
             <button
               onClick={() => finSet.mutate(setActivo)}
               className="text-gray-300 hover:text-white text-xs bg-white/10 hover:bg-white/20 border border-white/20 px-4 py-2 rounded-lg transition"
             >
               {total_sets === 1 ? '🏁 Concluir y Finalizar Partida' : `Finalizar set ${setActivo}`}
             </button>
+            <button
+              type="button"
+              onClick={() => setModalDesempateOro(true)}
+              className="text-yellow-300 hover:text-yellow-200 text-xs bg-yellow-400/10 hover:bg-yellow-400/20 border border-yellow-400/40 px-4 py-2 rounded-lg transition flex items-center gap-1.5"
+            >
+              <span>⚔️</span> Carambola de Oro (Desempate)
+            </button>
           </div>
         )}
 
         {/* Notificación de set ya concluido */}
         {setData && setData.ganador_id && (
-          <div className="mt-5 bg-black/40 backdrop-blur-sm border border-emerald-400/40 rounded-xl p-3 text-center text-white">
-            <p className="text-xs font-bold text-emerald-300 flex items-center justify-center gap-1.5">
+          <div className="mt-5 bg-black/40 backdrop-blur-sm border border-emerald-400/40 rounded-xl p-3.5 text-center text-white">
+            <p className="text-xs font-bold text-emerald-300 flex items-center justify-center gap-1.5 flex-wrap">
               <span>✓</span>
               <span>
                 Set {setActivo} concluido — Ganó {setData.ganador_id === jugador_a.id ? jugador_a.nombre_completo : jugador_b.nombre_completo}
               </span>
+              {setData.desempate_oro && (
+                <span className="bg-yellow-400 text-yellow-950 text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider shadow">
+                  🏅 Carambola de Oro
+                </span>
+              )}
             </p>
             {estado === 'en_curso' && sets.some((s) => !s.ganador_id) && (
               <button
@@ -828,17 +952,71 @@ export default function MarcadorPage() {
         )}
       </div>
 
+      {/* Modal para declarar Carambola de Oro manualmente */}
+      {modalDesempateOro && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md border border-gray-100 text-gray-900 animate-fade-in">
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100 mb-3">
+              <h4 className="font-extrabold text-base text-gray-900 flex items-center gap-2">
+                <span>⚔️</span> Declarar Carambola de Oro (Set {setActivo})
+              </h4>
+              <button onClick={() => setModalDesempateOro(false)} className="text-gray-400 hover:text-gray-600 font-bold">✕</button>
+            </div>
+            <p className="text-xs text-gray-600 mb-4 leading-relaxed">
+              En caso de empate reglamentario, cada jugador ejecuta un tiro desde el punto de partida inicial.
+              Como juez oficial, selecciona quién ganó el desempate por Carambola de Oro:
+            </p>
+            <div className="space-y-2.5 mb-4">
+              <button
+                type="button"
+                onClick={() => desempateOroMut.mutate({ set_numero: setActivo, ganador_id: jugador_a.id })}
+                disabled={desempateOroMut.isPending}
+                className="w-full text-left p-3.5 rounded-xl border border-yellow-300 bg-yellow-50 hover:bg-yellow-100 text-yellow-950 font-bold transition flex items-center justify-between shadow-sm active:scale-98"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-base">🏅</span>
+                  <span>{jugador_a.nombre_completo}</span>
+                </div>
+                <span className="text-[11px] bg-yellow-400 text-yellow-950 px-2.5 py-1 rounded-md font-black uppercase">Declarar Ganador</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => desempateOroMut.mutate({ set_numero: setActivo, ganador_id: jugador_b.id })}
+                disabled={desempateOroMut.isPending}
+                className="w-full text-left p-3.5 rounded-xl border border-yellow-300 bg-yellow-50 hover:bg-yellow-100 text-yellow-950 font-bold transition flex items-center justify-between shadow-sm active:scale-98"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-base">🏅</span>
+                  <span>{jugador_b.nombre_completo}</span>
+                </div>
+                <span className="text-[11px] bg-yellow-400 text-yellow-950 px-2.5 py-1 rounded-md font-black uppercase">Declarar Ganador</span>
+              </button>
+            </div>
+            <div className="flex justify-end pt-2 border-t border-gray-100">
+              <button onClick={() => setModalDesempateOro(false)} className="btn-secondary text-xs">Cancelar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Tabs de sets (solo si hay más de 1 set) */}
       {total_sets > 1 && (
-        <div className="flex gap-1 mb-4">
+        <div className="flex gap-1 mb-4 flex-wrap">
           {Array.from({ length: total_sets }, (_, i) => i + 1).map((n) => {
             const s = sets.find((s) => s.numero === n);
+            const labelGanador = s?.ganador_id
+              ? s.ganador_id === jugador_a.id
+                ? `(A✓${s.desempate_oro ? ' 🏅' : ''})`
+                : `(B✓${s.desempate_oro ? ' 🏅' : ''})`
+              : s?.es_empate
+              ? '(⚔️ Empate)'
+              : '';
             return (
               <button key={n} onClick={() => setSetActivo(n)}
                 className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
-                  setActivo === n ? 'bg-primary-600 text-white' : 'bg-white text-gray-600 border hover:bg-gray-50'
+                  setActivo === n ? 'bg-primary-600 text-white shadow' : 'bg-white text-gray-600 border hover:bg-gray-50'
                 }`}>
-                Set {n} {s?.ganador_id ? (s.ganador_id === jugador_a.id ? '(A✓)' : '(B✓)') : ''}
+                Set {n} {labelGanador}
               </button>
             );
           })}

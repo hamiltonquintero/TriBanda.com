@@ -71,6 +71,15 @@ export async function finalizarSet(req: Request, res: Response, next: NextFuncti
   } catch (err) { next(err); }
 }
 
+export async function resolverDesempateSet(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const set_numero = parseInt(req.params.set_numero);
+    const { ganador_id } = req.body as { ganador_id: string };
+    if (!ganador_id) return res.status(400).json({ error: 'Debe especificar el ganador_id para el desempate' });
+    res.json(await svc.resolverDesempateSet(req.params.id, set_numero, ganador_id, req.user?.id));
+  } catch (err) { next(err); }
+}
+
 export async function confirmarPartida(req: AuthRequest, res: Response, next: NextFunction) {
   try {
     if (!req.user) return res.status(401).json({ error: 'No autenticado' });

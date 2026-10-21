@@ -466,8 +466,13 @@ function SetTabla({ set, jugadorA, jugadorB, partidaId, puedeEditar, onGuardado 
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
         <h2 className="font-semibold text-lg">Set {set.numero}</h2>
         {set.ganador_id && (
-          <span className="text-sm bg-green-100 text-green-700 px-3 py-1 rounded-full font-medium">
-            Ganador: {set.ganador_id === jugadorA.id ? jugadorA.nombre_completo : jugadorB.nombre_completo}
+          <span className="text-sm bg-green-100 text-green-700 px-3 py-1 rounded-full font-medium inline-flex items-center gap-1.5">
+            <span>Ganador: {set.ganador_id === jugadorA.id ? jugadorA.nombre_completo : jugadorB.nombre_completo}</span>
+            {(set as any).desempate_oro && (
+              <span className="bg-yellow-200 text-yellow-900 text-xs px-2 py-0.5 rounded-full font-extrabold border border-yellow-400">
+                🏅 Carambola de Oro
+              </span>
+            )}
           </span>
         )}
       </div>
