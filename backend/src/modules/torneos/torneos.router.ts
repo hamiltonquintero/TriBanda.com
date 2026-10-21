@@ -17,6 +17,7 @@ router.post('/', authGuard, roleGuard('admin'), ctrl.crearTorneo);
 router.put('/:id', authGuard, roleGuard('admin'), ctrl.editarTorneo);
 router.patch('/:id/estado', authGuard, roleGuard('admin'), ctrl.cambiarEstado);
 router.post('/:id/fases', authGuard, roleGuard('admin'), ctrl.crearFase);
+router.put('/:id/fases/:faseId', authGuard, roleGuard('admin'), ctrl.editarFase);
 router.delete('/:id/fases/:faseId', authGuard, roleGuard('admin'), ctrl.eliminarFase);
 
 export default router;

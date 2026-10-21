@@ -6,9 +6,6 @@ import { Torneo, InscripcionTorneo, Jugador } from '../../types';
 import { useAuthStore } from '../../store/authStore';
 import GuiaInteractivaAdmin from '../../components/GuiaInteractivaAdmin';
 
-const estadoSiguiente: Record<string, string> = { borrador: 'activo', activo: 'finalizado' };
-const estadoLabel: Record<string, string> = { borrador: 'Activar torneo', activo: 'Finalizar torneo' };
-
 export default function DetalleTorneoPage() {
   const { id } = useParams<{ id: string }>();
   const { hasRole } = useAuthStore();
@@ -20,6 +17,22 @@ export default function DetalleTorneoPage() {
   const [metasPorJugador, setMetasPorJugador] = useState<Record<string, number>>({});
   const [handicapLoteDefault, setHandicapLoteDefault] = useState<number | ''>('');
   const [filtroTablaInscritos, setFiltroTablaInscritos] = useState<'todos' | 'pagados' | 'pendientes'>('todos');
+
+  // Modales de fases
+  const [modalNuevaFase, setModalNuevaFase] = useState(false);
+  const [formNuevaFase, setFormNuevaFase] = useState({
+    tipo: 'llaves' as 'grupos' | 'clasificatorio' | 'llaves' | 'final',
+    fecha: new Date().toISOString().split('T')[0],
+    orden: 2,
+    clasificados_por_grupo: 2,
+  });
+  const [faseAEditar, setFaseAEditar] = useState<{
+    id: string;
+    tipo: 'grupos' | 'clasificatorio' | 'llaves' | 'final';
+    fecha: string;
+    orden: number;
+    clasificados_por_grupo: number;
+  } | null>(null);
 
   const { data: torneo, isLoading } = useQuery<Torneo>({
     queryKey: ['torneo', id],
@@ -40,7 +53,71 @@ export default function DetalleTorneoPage() {
 
   const cambiarEstado = useMutation({
     mutationFn: (estado: string) => api.patch(`/torneos/${id}/estado`, { estado }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['torneo', id] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['torneo', id] });
+      qc.invalidateQueries({ queryKey: ['partidas', id] });
+    },
+  });
+
+  const eliminarFaseMut = useMutation({
+    mutationFn: (faseId: string) => api.delete(`/torneos/${id}/fases/${faseId}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['torneo', id] });
+      alert('Fase eliminada correctamente.');
+    },
+    onError: (err: any) => {
+      alert(err.response?.data?.error || 'Error al eliminar la fase');
+    },
+  });
+
+  const crearFaseRapidaMut = useMutation({
+    mutationFn: (data: { tipo: string; fecha: string; orden: number; clasificados_por_grupo?: number }) =>
+      api.post(`/torneos/${id}/fases`, {
+        ...data,
+        fecha: new Date(data.fecha).toISOString(),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['torneo', id] });
+      setModalNuevaFase(false);
+      alert('¡Fase creada con éxito!');
+    },
+    onError: (err: any) => {
+      alert(err.response?.data?.error || 'Error al crear la fase');
+    },
+  });
+
+  const editarFaseMut = useMutation({
+    mutationFn: ({
+      faseId,
+      data,
+    }: {
+      faseId: string;
+      data: { tipo?: string; fecha?: string; orden?: number; clasificados_por_grupo?: number };
+    }) =>
+      api.put(`/torneos/${id}/fases/${faseId}`, {
+        ...data,
+        ...(data.fecha && { fecha: new Date(data.fecha).toISOString() }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['torneo', id] });
+      setFaseAEditar(null);
+      alert('¡Fase actualizada con éxito!');
+    },
+    onError: (err: any) => {
+      alert(err.response?.data?.error || 'Error al actualizar la fase');
+    },
+  });
+
+  const generarPartidasFaseMut = useMutation({
+    mutationFn: (faseId: string) => api.post(`/grupos/fase/${faseId}/generar-partidas`),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ['torneo', id] });
+      qc.invalidateQueries({ queryKey: ['partidas', id] });
+      alert(`⚡ ¡Listo! Se generaron ${res.data.total_creadas} partidas automáticamente.`);
+    },
+    onError: (err: any) => {
+      alert(err.response?.data?.error || 'Error al generar partidas');
+    },
   });
 
   const togglePago = useMutation({
@@ -206,7 +283,6 @@ export default function DetalleTorneoPage() {
   if (isLoading) return <p className="text-gray-500 py-12 text-center">Cargando torneo...</p>;
   if (!torneo) return <p className="text-red-500 py-12 text-center">Torneo no encontrado</p>;
 
-  const siguienteEstado = estadoSiguiente[torneo.estado];
   const yaInscritosIds = new Set(inscripciones.map((ins) => ins.jugador_id));
   const disponiblesParaInscribir = todosJugadores.filter(
     (j) =>
@@ -270,23 +346,72 @@ export default function DetalleTorneoPage() {
               </span>
             </div>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Link to={`/publico/torneos/${id}`} className="btn-outline text-white border-white/30 hover:bg-white/10">
               Vista pública
             </Link>
-            {hasRole('admin') && torneo.estado === 'borrador' && (
-              <Link to={`/torneos/${id}/editar`} className="btn-outline text-white border-white/30 hover:bg-white/10">
+            {hasRole('admin') && (
+              <Link to={`/torneos/${id}/editar`} className="btn-outline text-white border-white/30 hover:bg-white/10 flex items-center gap-1">
+                <span className="material-icons text-xs">edit</span>
                 Editar
               </Link>
             )}
-            {hasRole('admin') && siguienteEstado && (
-              <button
-                onClick={() => cambiarEstado.mutate(siguienteEstado)}
-                className="btn-secondary"
-                disabled={cambiarEstado.isPending}
-              >
-                {estadoLabel[torneo.estado]}
-              </button>
+            {hasRole('admin') && (
+              <div className="flex items-center gap-1.5 bg-black/25 p-1 rounded-xl backdrop-blur-xs">
+                {torneo.estado === 'borrador' && (
+                  <button
+                    onClick={() => {
+                      if (confirm('¿Deseas activar el torneo e iniciar la competencia?')) {
+                        cambiarEstado.mutate('activo');
+                      }
+                    }}
+                    className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-xs font-bold transition flex items-center gap-1 shadow-sm"
+                    disabled={cambiarEstado.isPending}
+                  >
+                    <span>⚡</span> Activar torneo
+                  </button>
+                )}
+                {torneo.estado === 'activo' && (
+                  <>
+                    <button
+                      onClick={() => {
+                        if (confirm('¿Deseas finalizar oficialmente el torneo?')) {
+                          cambiarEstado.mutate('finalizado');
+                        }
+                      }}
+                      className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-amber-950 rounded-lg text-xs font-bold transition flex items-center gap-1 shadow-sm"
+                      disabled={cambiarEstado.isPending}
+                    >
+                      <span>🏁</span> Finalizar torneo
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (confirm('¿Regresar el torneo a estado Borrador para hacer cambios previos? Podrás volver a activarlo cuando desees.')) {
+                          cambiarEstado.mutate('borrador');
+                        }
+                      }}
+                      className="px-2.5 py-1.5 bg-white/15 hover:bg-white/25 text-white rounded-lg text-xs font-medium transition"
+                      disabled={cambiarEstado.isPending}
+                      title="Volver a borrador si necesitas modificar configuraciones de inicio"
+                    >
+                      ↩ Volver a Borrador
+                    </button>
+                  </>
+                )}
+                {torneo.estado === 'finalizado' && (
+                  <button
+                    onClick={() => {
+                      if (confirm('¿Deseas reactivar el torneo?')) {
+                        cambiarEstado.mutate('activo');
+                      }
+                    }}
+                    className="px-3 py-1.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-xs font-bold transition flex items-center gap-1 shadow-sm"
+                    disabled={cambiarEstado.isPending}
+                  >
+                    <span>↩</span> Reabrir a Activo
+                  </button>
+                )}
+              </div>
             )}
           </div>
         </div>
@@ -325,50 +450,155 @@ export default function DetalleTorneoPage() {
 
       {/* Fases del torneo */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="font-heading font-bold text-lg text-gray-900 flex items-center gap-2">
-            <span className="material-icons text-primary-600">layers</span>
-            Fases del Torneo
-          </h2>
-          {hasRole('admin') && torneo.estado === 'borrador' && (
-            <Link to={`/torneos/${id}/fases/nueva`} className="btn-primary text-xs">
-              <span className="material-icons text-xs mr-1 align-middle">add</span>Agregar fase
-            </Link>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+          <div>
+            <h2 className="font-heading font-bold text-lg text-gray-900 flex items-center gap-2">
+              <span className="material-icons text-primary-600">layers</span>
+              Fases del Torneo ({torneo.fases?.length || 0})
+            </h2>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Administra las fases (Grupos, Llaves/Playoffs, Final) en cualquier momento del torneo.
+            </p>
+          </div>
+          {hasRole('admin') && (
+            <button
+              onClick={() => {
+                const nextOrden = (torneo.fases?.length || 0) + 1;
+                setFormNuevaFase({
+                  tipo: 'llaves',
+                  fecha: new Date().toISOString().split('T')[0],
+                  orden: nextOrden,
+                  clasificados_por_grupo: 2,
+                });
+                setModalNuevaFase(true);
+              }}
+              className="btn-primary text-xs flex items-center gap-1 shadow-sm self-start sm:self-auto"
+            >
+              <span className="material-icons text-xs mr-0.5">add</span>+ Agregar fase
+            </button>
           )}
         </div>
+
         {!torneo.fases || torneo.fases.length === 0 ? (
-          <p className="text-gray-400 text-sm">No hay fases configuradas aún.</p>
+          <div className="text-center py-8 bg-gray-50 rounded-xl border border-dashed border-gray-300">
+            <span className="material-icons text-3xl text-gray-400 mb-1 block">layers_clear</span>
+            <p className="text-gray-500 text-sm font-semibold">No hay fases configuradas aún en este torneo.</p>
+            {hasRole('admin') && (
+              <button
+                onClick={() => {
+                  setFormNuevaFase({
+                    tipo: 'grupos',
+                    fecha: new Date().toISOString().split('T')[0],
+                    orden: 1,
+                    clasificados_por_grupo: 2,
+                  });
+                  setModalNuevaFase(true);
+                }}
+                className="btn-primary text-xs mt-3 inline-flex items-center gap-1"
+              >
+                <span className="material-icons text-xs">add</span>
+                Crear Fase Inicial (Grupos)
+              </button>
+            )}
+          </div>
         ) : (
-          <ol className="space-y-2.5">
+          <ol className="space-y-3">
             {torneo.fases.map((f) => (
               <li
                 key={f.id}
-                className="flex items-center justify-between text-sm bg-gray-50 border rounded-lg px-4 py-2.5"
+                className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-sm bg-gray-50 border rounded-xl p-3.5 hover:border-emerald-300 transition"
               >
                 <div className="flex items-center gap-3">
-                  <span className="w-7 h-7 rounded-full bg-primary-600 text-white flex items-center justify-center text-xs font-bold">
+                  <span className="w-8 h-8 rounded-xl bg-primary-600 text-white flex items-center justify-center text-xs font-black shadow-xs shrink-0">
                     {f.orden}
                   </span>
-                  <span className="capitalize font-semibold text-gray-800">{f.tipo}</span>
-                  <span className="text-xs text-gray-400">
-                    {new Date(f.fecha).toLocaleDateString('es-CO')}
-                  </span>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="capitalize font-bold text-gray-900 text-base">
+                        {f.tipo === 'llaves' ? 'Playoffs / Llaves' : f.tipo === 'grupos' ? 'Fase de Grupos' : f.tipo}
+                      </span>
+                      <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
+                        {f.tipo}
+                      </span>
+                    </div>
+                    <span className="text-xs text-gray-500 flex items-center gap-1 mt-0.5">
+                      <span className="material-icons text-[12px] text-gray-400">event</span>
+                      Fecha: {new Date(f.fecha).toLocaleDateString('es-CO')}
+                      {f.tipo === 'grupos' && (
+                        <span className="ml-2 text-emerald-700 font-medium">
+                          • Clasifican {f.clasificados_por_grupo ?? 2} por grupo
+                        </span>
+                      )}
+                    </span>
+                  </div>
                 </div>
-                {f.tipo === 'grupos' || f.tipo === 'clasificatorio' ? (
-                  <Link
-                    to={`/torneos/${id}/fases/${f.id}/grupos`}
-                    className="text-xs text-primary-600 hover:underline font-semibold"
-                  >
-                    Ver Grupos →
-                  </Link>
-                ) : (
-                  <Link
-                    to={`/torneos/${id}/bracket`}
-                    className="text-xs text-primary-600 hover:underline font-semibold"
-                  >
-                    Ver Bracket / Llaves →
-                  </Link>
-                )}
+
+                <div className="flex flex-wrap items-center gap-2 self-end sm:self-auto">
+                  {f.tipo === 'grupos' || f.tipo === 'clasificatorio' ? (
+                    <>
+                      {hasRole('admin') && (
+                        <button
+                          type="button"
+                          onClick={() => generarPartidasFaseMut.mutate(f.id)}
+                          disabled={generarPartidasFaseMut.isPending}
+                          className="px-2.5 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 rounded-lg text-xs font-bold transition flex items-center gap-1"
+                          title="Genera automáticamente las partidas de todos los grupos de esta fase"
+                        >
+                          <span>⚡</span>
+                          <span>Partidas</span>
+                        </button>
+                      )}
+                      <Link
+                        to={`/torneos/${id}/fases/${f.id}/grupos`}
+                        className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg text-xs font-bold transition flex items-center gap-1"
+                      >
+                        <span>Ver Grupos</span>
+                        <span className="material-icons text-xs">arrow_forward</span>
+                      </Link>
+                    </>
+                  ) : (
+                    <Link
+                      to={`/torneos/${id}/bracket`}
+                      className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg text-xs font-bold transition flex items-center gap-1"
+                    >
+                      <span>Ver Bracket / Llaves</span>
+                      <span className="material-icons text-xs">arrow_forward</span>
+                    </Link>
+                  )}
+
+                  {hasRole('admin') && (
+                    <>
+                      <button
+                        onClick={() => {
+                          setFaseAEditar({
+                            id: f.id,
+                            tipo: f.tipo,
+                            fecha: f.fecha.split('T')[0],
+                            orden: f.orden,
+                            clasificados_por_grupo: f.clasificados_por_grupo ?? 2,
+                          });
+                        }}
+                        className="p-1.5 text-gray-500 hover:text-emerald-700 hover:bg-gray-200/60 rounded-lg transition"
+                        title="Modificar fase"
+                      >
+                        <span className="material-icons text-sm">edit</span>
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          if (confirm(`⚠️ ¿Seguro que deseas eliminar la Fase ${f.orden} (${f.tipo})?\nSe eliminarán los grupos y partidas asociadas a esta fase.`)) {
+                            eliminarFaseMut.mutate(f.id);
+                          }
+                        }}
+                        className="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition"
+                        title="Eliminar fase"
+                        disabled={eliminarFaseMut.isPending}
+                      >
+                        <span className="material-icons text-sm">delete</span>
+                      </button>
+                    </>
+                  )}
+                </div>
               </li>
             ))}
           </ol>
@@ -863,6 +1093,234 @@ export default function DetalleTorneoPage() {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal para Crear Nueva Fase */}
+      {modalNuevaFase && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-4">
+            <div className="flex items-center justify-between border-b pb-3">
+              <h3 className="font-heading font-bold text-lg text-gray-900 flex items-center gap-2">
+                <span className="material-icons text-primary-600">add_circle</span>
+                Agregar Nueva Fase al Torneo
+              </h3>
+              <button
+                type="button"
+                onClick={() => setModalNuevaFase(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                crearFaseRapidaMut.mutate(formNuevaFase);
+              }}
+              className="space-y-4"
+            >
+              <div>
+                <label className="label">Tipo de fase *</label>
+                <select
+                  value={formNuevaFase.tipo}
+                  onChange={(e) =>
+                    setFormNuevaFase({
+                      ...formNuevaFase,
+                      tipo: e.target.value as any,
+                    })
+                  }
+                  className="input"
+                >
+                  <option value="llaves">Playoffs / Llaves (Eliminación directa)</option>
+                  <option value="grupos">Fase de Grupos (Round-Robin)</option>
+                  <option value="final">Gran Final</option>
+                  <option value="clasificatorio">Clasificatorio</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="label">Fecha *</label>
+                <input
+                  type="date"
+                  value={formNuevaFase.fecha}
+                  onChange={(e) => setFormNuevaFase({ ...formNuevaFase, fecha: e.target.value })}
+                  className="input"
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="label">Número de Orden *</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={formNuevaFase.orden}
+                    onChange={(e) => setFormNuevaFase({ ...formNuevaFase, orden: parseInt(e.target.value) || 1 })}
+                    className="input"
+                    required
+                  />
+                </div>
+
+                {formNuevaFase.tipo === 'grupos' && (
+                  <div>
+                    <label className="label">Clasifican por grupo</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="10"
+                      value={formNuevaFase.clasificados_por_grupo}
+                      onChange={(e) =>
+                        setFormNuevaFase({
+                          ...formNuevaFase,
+                          clasificados_por_grupo: parseInt(e.target.value) || 2,
+                        })
+                      }
+                      className="input"
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-2 justify-end pt-3 border-t">
+                <button
+                  type="button"
+                  onClick={() => setModalNuevaFase(false)}
+                  className="btn-secondary text-xs"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={crearFaseRapidaMut.isPending}
+                  className="btn-primary text-xs flex items-center gap-1 font-bold"
+                >
+                  <span className="material-icons text-sm">save</span>
+                  {crearFaseRapidaMut.isPending ? 'Creando...' : 'Crear Fase Ahora'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal para Editar Fase Existente */}
+      {faseAEditar && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-4">
+            <div className="flex items-center justify-between border-b pb-3">
+              <h3 className="font-heading font-bold text-lg text-gray-900 flex items-center gap-2">
+                <span className="material-icons text-primary-600">edit</span>
+                Modificar Fase {faseAEditar.orden}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setFaseAEditar(null)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                editarFaseMut.mutate({
+                  faseId: faseAEditar.id,
+                  data: {
+                    tipo: faseAEditar.tipo,
+                    fecha: faseAEditar.fecha,
+                    orden: faseAEditar.orden,
+                    clasificados_por_grupo: faseAEditar.clasificados_por_grupo,
+                  },
+                });
+              }}
+              className="space-y-4"
+            >
+              <div>
+                <label className="label">Tipo de fase *</label>
+                <select
+                  value={faseAEditar.tipo}
+                  onChange={(e) =>
+                    setFaseAEditar({
+                      ...faseAEditar,
+                      tipo: e.target.value as any,
+                    })
+                  }
+                  className="input"
+                >
+                  <option value="llaves">Playoffs / Llaves (Eliminación directa)</option>
+                  <option value="grupos">Fase de Grupos (Round-Robin)</option>
+                  <option value="final">Gran Final</option>
+                  <option value="clasificatorio">Clasificatorio</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="label">Fecha *</label>
+                <input
+                  type="date"
+                  value={faseAEditar.fecha}
+                  onChange={(e) => setFaseAEditar({ ...faseAEditar, fecha: e.target.value })}
+                  className="input"
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="label">Número de Orden *</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={faseAEditar.orden}
+                    onChange={(e) => setFaseAEditar({ ...faseAEditar, orden: parseInt(e.target.value) || 1 })}
+                    className="input"
+                    required
+                  />
+                </div>
+
+                {faseAEditar.tipo === 'grupos' && (
+                  <div>
+                    <label className="label">Clasifican por grupo</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="10"
+                      value={faseAEditar.clasificados_por_grupo}
+                      onChange={(e) =>
+                        setFaseAEditar({
+                          ...faseAEditar,
+                          clasificados_por_grupo: parseInt(e.target.value) || 2,
+                        })
+                      }
+                      className="input"
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-2 justify-end pt-3 border-t">
+                <button
+                  type="button"
+                  onClick={() => setFaseAEditar(null)}
+                  className="btn-secondary text-xs"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={editarFaseMut.isPending}
+                  className="btn-primary text-xs flex items-center gap-1 font-bold"
+                >
+                  <span className="material-icons text-sm">save</span>
+                  {editarFaseMut.isPending ? 'Guardando...' : 'Guardar Cambios'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

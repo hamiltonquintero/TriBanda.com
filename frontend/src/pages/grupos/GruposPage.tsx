@@ -31,6 +31,18 @@ export default function GruposPage() {
     },
   });
 
+  const eliminarGrupoMut = useMutation({
+    mutationFn: (grupoId: string) => api.delete(`/grupos/${grupoId}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['grupos', faseId] });
+      qc.invalidateQueries({ queryKey: ['clasificados-fase', faseId] });
+      alert('Grupo eliminado correctamente.');
+    },
+    onError: (err: any) => {
+      alert(err.response?.data?.error || 'Error al eliminar el grupo');
+    },
+  });
+
   const generarPartidas = useMutation({
     mutationFn: () => api.post(`/grupos/fase/${faseId}/generar-partidas`),
     onSuccess: (res) => {
@@ -459,11 +471,30 @@ export default function GruposPage() {
                       Desempate oficial: Puntos → Prom. Gral → Prom. Ind. → Mayor Serie → CAR
                     </p>
                   </div>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     {hasRole('admin') && (
-                      <Link to={`/torneos/${torneoId}/fases/${faseId}/grupos/${grupo.id}/asignar`} className="btn-secondary text-xs">Asignar jugadores</Link>
+                      <Link to={`/torneos/${torneoId}/fases/${faseId}/grupos/${grupo.id}/asignar`} className="btn-secondary text-xs">
+                        Asignar jugadores
+                      </Link>
                     )}
-                    <Link to={`/torneos/${torneoId}/fases/${faseId}/grupos/${grupo.id}`} className="btn-primary text-xs">Ver detalle y partidas</Link>
+                    <Link to={`/torneos/${torneoId}/fases/${faseId}/grupos/${grupo.id}`} className="btn-primary text-xs">
+                      Ver detalle y partidas
+                    </Link>
+                    {hasRole('admin') && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (confirm(`⚠️ ¿Deseas eliminar el Grupo ${grupo.numero}?`)) {
+                            eliminarGrupoMut.mutate(grupo.id);
+                          }
+                        }}
+                        disabled={eliminarGrupoMut.isPending}
+                        className="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition"
+                        title="Eliminar grupo"
+                      >
+                        <span className="material-icons text-sm">delete</span>
+                      </button>
+                    )}
                   </div>
                 </div>
                 {grupo.jugadores.length === 0 ? (

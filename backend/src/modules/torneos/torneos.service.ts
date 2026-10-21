@@ -67,7 +67,6 @@ export async function editarTorneo(id: string, data: Partial<{
 }>) {
   const torneo = await prisma.torneo.findUnique({ where: { id } });
   if (!torneo) throw new Error('Torneo no encontrado');
-  if (torneo.estado !== 'borrador') throw new Error('Solo se puede editar un torneo en estado borrador');
 
   return prisma.torneo.update({
     where: { id },
@@ -100,13 +99,28 @@ export async function crearFase(torneo_id: string, data: {
   tipo: 'grupos' | 'clasificatorio' | 'llaves' | 'final';
   fecha: string;
   orden: number;
+  clasificados_por_grupo?: number;
 }) {
   const torneo = await prisma.torneo.findUnique({ where: { id: torneo_id } });
   if (!torneo) throw new Error('Torneo no encontrado');
-  if (torneo.estado !== 'borrador') throw new Error('No se pueden agregar fases a un torneo activo o finalizado');
 
   return prisma.fase.create({
     data: { ...data, fecha: new Date(data.fecha), torneo_id },
+  });
+}
+
+export async function editarFase(id: string, data: {
+  tipo?: 'grupos' | 'clasificatorio' | 'llaves' | 'final';
+  fecha?: string;
+  orden?: number;
+  clasificados_por_grupo?: number;
+}) {
+  return prisma.fase.update({
+    where: { id },
+    data: {
+      ...data,
+      ...(data.fecha && { fecha: new Date(data.fecha) }),
+    },
   });
 }
 
@@ -118,6 +132,8 @@ export async function listarFases(torneo_id: string) {
 }
 
 export async function eliminarFase(id: string) {
+  // Safe cascade: eliminar partidas asociadas antes de eliminar la fase
+  await prisma.partida.deleteMany({ where: { fase_id: id } });
   return prisma.fase.delete({ where: { id } });
 }
 

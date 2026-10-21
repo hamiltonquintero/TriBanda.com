@@ -79,14 +79,6 @@ export default function EditarTorneoPage() {
   }
 
   if (isLoading || !torneo) return <p className="text-gray-500">Cargando torneo...</p>;
-  if (torneo.estado !== 'borrador') {
-    return (
-      <div className="max-w-xl mx-auto">
-        <p className="text-red-600">Solo se puede editar un torneo en estado borrador.</p>
-        <button type="button" className="btn-secondary mt-4" onClick={() => navigate(`/torneos/${id}`)}>Volver</button>
-      </div>
-    );
-  }
 
   return (
     <div className="max-w-2xl mx-auto">

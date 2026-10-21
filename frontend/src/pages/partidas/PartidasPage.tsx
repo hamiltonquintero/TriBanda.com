@@ -322,16 +322,21 @@ export default function PartidasPage() {
               <p className="text-xs text-gray-500 max-w-md mx-auto mb-4">
                 Si ya realizaste el sorteo de grupos, puedes generar el fixture de partidas automáticamente con un solo clic.
               </p>
-              {filtroFase && (
-                <button
-                  type="button"
-                  onClick={() => generarPartidasMut.mutate(filtroFase)}
-                  disabled={generarPartidasMut.isPending}
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow transition"
-                >
-                  {generarPartidasMut.isPending ? 'Generando...' : '⚡ Generar Partidas de esta Fase'}
-                </button>
-              )}
+              {(() => {
+                const targetFaseId = filtroFase || fases.find((f) => f.tipo === 'grupos' || f.tipo === 'clasificatorio')?.id || fases[0]?.id;
+                if (!targetFaseId) return null;
+                return (
+                  <button
+                    type="button"
+                    onClick={() => generarPartidasMut.mutate(targetFaseId)}
+                    disabled={generarPartidasMut.isPending}
+                    className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md hover:shadow-lg transition inline-flex items-center gap-1.5"
+                  >
+                    <span>⚡</span>
+                    <span>{generarPartidasMut.isPending ? 'Generando...' : 'Autogenerar Partidas de Grupos Ahora'}</span>
+                  </button>
+                );
+              })()}
             </div>
           ) : partidasFiltradas.length === 0 ? (
             /* Estado cuando el filtro seleccionado no tiene partidas */

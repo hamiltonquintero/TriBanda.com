@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { useState } from 'react';
 import api from '../services/api';
@@ -16,12 +16,25 @@ export default function GuiaInteractivaAdmin({
   onOpenInscribir,
 }: GuiaInteractivaAdminProps) {
   const [expandido, setExpandido] = useState<boolean>(true);
+  const qc = useQueryClient();
   const torneoId = torneo.id;
 
   // 1. Usar fases y grupos precargados en el objeto torneo (Cero peticiones extra)
   const fases = torneo.fases || [];
-  const faseGrupos = fases.find((f) => f.tipo === 'grupos');
+  const faseGrupos = fases.find((f) => f.tipo === 'grupos' || f.tipo === 'clasificatorio');
   const grupos: Grupo[] = faseGrupos?.grupos || [];
+
+  const generarPartidasMut = useMutation({
+    mutationFn: (faseId: string) => api.post(`/grupos/fase/${faseId}/generar-partidas`),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ['partidas', torneoId] });
+      qc.invalidateQueries({ queryKey: ['torneo', torneoId] });
+      alert(`⚡ ¡Listo! Se generaron ${res.data.total_creadas} partidas automáticamente.`);
+    },
+    onError: (err: any) => {
+      alert(err.response?.data?.error || 'Error al generar partidas');
+    },
+  });
 
   const totalInscritos = inscripciones.length;
   const pagadosCount = inscripciones.filter((i) => i.pago_confirmado).length;
@@ -173,13 +186,26 @@ export default function GuiaInteractivaAdmin({
             )}
 
             {pasoActivo === 3 && (
-              <Link
-                to={`/torneos/${torneoId}/partidas`}
-                className="w-full sm:w-auto px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-extrabold shadow-md hover:shadow-lg transition flex items-center justify-center gap-2"
-              >
-                <span className="material-icons text-sm">sports_score</span>
-                <span>Ver Partidas y Marcadores →</span>
-              </Link>
+              <div className="flex flex-col sm:flex-row items-center gap-2">
+                {totalPartidasGrupo === 0 && faseGrupos && (
+                  <button
+                    type="button"
+                    onClick={() => generarPartidasMut.mutate(faseGrupos.id)}
+                    disabled={generarPartidasMut.isPending}
+                    className="w-full sm:w-auto px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-amber-950 font-black rounded-xl text-xs shadow-md hover:shadow-lg transition flex items-center justify-center gap-1.5 animate-pulse"
+                  >
+                    <span>⚡</span>
+                    <span>{generarPartidasMut.isPending ? 'Generando...' : 'Autogenerar Partidas Ahora'}</span>
+                  </button>
+                )}
+                <Link
+                  to={`/torneos/${torneoId}/partidas`}
+                  className="w-full sm:w-auto px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-extrabold shadow-md hover:shadow-lg transition flex items-center justify-center gap-2"
+                >
+                  <span className="material-icons text-sm">sports_score</span>
+                  <span>Ver Partidas y Marcadores →</span>
+                </Link>
+              </div>
             )}
 
             {pasoActivo === 4 && (
@@ -381,16 +407,29 @@ export default function GuiaInteractivaAdmin({
                 Los jueces anotan en las tablets en tiempo real. La tabla de posiciones se calcula sola.
               </p>
 
-              <div className="pt-2 border-t border-gray-200/60 flex items-center justify-between">
-                <span className="text-[10px] text-gray-500 font-medium">
-                  {partidasEnJuego > 0 ? `● ${partidasEnJuego} en vivo` : 'Marcador digital'}
-                </span>
-                <Link
-                  to={`/torneos/${torneoId}/partidas`}
-                  className="text-xs font-bold text-emerald-700 hover:text-emerald-900 hover:underline"
-                >
-                  Abrir partidas →
-                </Link>
+              <div className="pt-2 border-t border-gray-200/60 flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-gray-500 font-medium">
+                    {partidasEnJuego > 0 ? `● ${partidasEnJuego} en vivo` : 'Marcador digital'}
+                  </span>
+                  <Link
+                    to={`/torneos/${torneoId}/partidas`}
+                    className="text-xs font-bold text-emerald-700 hover:text-emerald-900 hover:underline"
+                  >
+                    Abrir partidas →
+                  </Link>
+                </div>
+                {totalPartidasGrupo === 0 && faseGrupos && (
+                  <button
+                    type="button"
+                    onClick={() => generarPartidasMut.mutate(faseGrupos.id)}
+                    disabled={generarPartidasMut.isPending}
+                    className="w-full py-1.5 bg-amber-500 hover:bg-amber-600 text-amber-950 font-bold rounded-lg text-xs shadow-xs transition flex items-center justify-center gap-1"
+                  >
+                    <span>⚡</span>
+                    <span>{generarPartidasMut.isPending ? 'Generando...' : 'Autogenerar Partidas'}</span>
+                  </button>
+                )}
               </div>
             </div>
 

@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import * as svc from './torneos.service';
-import { crearTorneoSchema, editarTorneoSchema, crearFaseSchema, cambiarEstadoSchema } from './torneos.schema';
+import { crearTorneoSchema, editarTorneoSchema, crearFaseSchema, editarFaseSchema, cambiarEstadoSchema } from './torneos.schema';
 
 export async function listarTorneos(_req: Request, res: Response, next: NextFunction) {
   try { res.json(await svc.listarTorneos()); } catch (err) { next(err); }
@@ -41,6 +41,13 @@ export async function crearFase(req: Request, res: Response, next: NextFunction)
   try {
     const data = crearFaseSchema.parse(req.body);
     res.status(201).json(await svc.crearFase(req.params.id, data));
+  } catch (err) { next(err); }
+}
+
+export async function editarFase(req: Request, res: Response, next: NextFunction) {
+  try {
+    const data = editarFaseSchema.parse(req.body);
+    res.json(await svc.editarFase(req.params.faseId, data));
   } catch (err) { next(err); }
 }
 

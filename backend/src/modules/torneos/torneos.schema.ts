@@ -26,7 +26,10 @@ export const crearFaseSchema = z.object({
   tipo: z.enum(['grupos', 'clasificatorio', 'llaves', 'final']),
   fecha: z.string().min(1, 'Fecha requerida'),
   orden: z.number().int().min(1),
+  clasificados_por_grupo: z.number().int().min(1).optional(),
 });
+
+export const editarFaseSchema = crearFaseSchema.partial();
 
 export const cambiarEstadoSchema = z.object({
   estado: z.enum(['borrador', 'activo', 'finalizado']),
