@@ -49,7 +49,11 @@ export async function inscribirJugador(torneo_id: string, jugador_id: string, me
 
 // ─── INSCRIBIR LOTE DE JUGADORES (Desde el directorio general) ───────────────
 
-export async function inscribirLote(torneo_id: string, jugador_ids: string[]) {
+export async function inscribirLote(
+  torneo_id: string,
+  jugador_ids: string[],
+  metas?: Record<string, number>
+) {
   if (!Array.isArray(jugador_ids) || jugador_ids.length === 0) {
     throw new Error('Debe proporcionar al menos un jugador');
   }
@@ -70,12 +74,13 @@ export async function inscribirLote(torneo_id: string, jugador_ids: string[]) {
   }
 
   const dataToInsert = nuevos.map((j) => {
+    const metaManual = metas?.[j.id];
     const { nivel, meta_puntos } = calcularNivelYMeta(j.promedio_historico);
     return {
       torneo_id,
       jugador_id: j.id,
       nivel,
-      meta_puntos,
+      meta_puntos: metaManual !== undefined && metaManual > 0 ? metaManual : meta_puntos,
       pago_confirmado: false,
     };
   });

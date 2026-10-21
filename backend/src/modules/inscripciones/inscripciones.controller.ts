@@ -33,8 +33,8 @@ export async function inscribirJugador(req: Request, res: Response, next: NextFu
 
 export async function inscribirLote(req: Request, res: Response, next: NextFunction) {
   try {
-    const { jugador_ids } = req.body;
-    res.status(201).json(await svc.inscribirLote(req.params.torneo_id, jugador_ids));
+    const { jugador_ids, metas } = req.body as { jugador_ids: string[]; metas?: Record<string, number> };
+    res.status(201).json(await svc.inscribirLote(req.params.torneo_id, jugador_ids, metas));
   } catch (err) { next(err); }
 }
 

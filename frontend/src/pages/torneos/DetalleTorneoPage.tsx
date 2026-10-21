@@ -17,6 +17,8 @@ export default function DetalleTorneoPage() {
   const [modalInscribir, setModalInscribir] = useState(false);
   const [buscarJugador, setBuscarJugador] = useState('');
   const [seleccionadosLote, setSeleccionadosLote] = useState<string[]>([]);
+  const [metasPorJugador, setMetasPorJugador] = useState<Record<string, number>>({});
+  const [handicapLoteDefault, setHandicapLoteDefault] = useState<number | ''>('');
   const [filtroTablaInscritos, setFiltroTablaInscritos] = useState<'todos' | 'pagados' | 'pendientes'>('todos');
 
   const { data: torneo, isLoading } = useQuery<Torneo>({
@@ -62,12 +64,36 @@ export default function DetalleTorneoPage() {
     },
   });
 
+  const actualizarMetaMut = useMutation({
+    mutationFn: ({ inscripcionId, meta_puntos }: { inscripcionId: string; meta_puntos: number }) =>
+      api.put(`/inscripciones/meta/${inscripcionId}`, { meta_puntos }),
+    onMutate: async ({ inscripcionId, meta_puntos }) => {
+      await qc.cancelQueries({ queryKey: ['inscripciones-torneo', id] });
+      const previo = qc.getQueryData<InscripcionTorneo[]>(['inscripciones-torneo', id]);
+      qc.setQueryData<InscripcionTorneo[]>(['inscripciones-torneo', id], (old = []) =>
+        old.map((ins) => (ins.id === inscripcionId ? { ...ins, meta_puntos } : ins))
+      );
+      return { previo };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previo) {
+        qc.setQueryData(['inscripciones-torneo', id], context.previo);
+      }
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['inscripciones-torneo', id] });
+    },
+  });
+
   const inscribirLoteMut = useMutation({
-    mutationFn: (jugador_ids: string[]) => api.post(`/inscripciones/${id}/lote`, { jugador_ids }),
+    mutationFn: ({ jugador_ids, metas }: { jugador_ids: string[]; metas?: Record<string, number> }) =>
+      api.post(`/inscripciones/${id}/lote`, { jugador_ids, metas }),
     onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ['inscripciones-torneo', id] });
       setModalInscribir(false);
       setSeleccionadosLote([]);
+      setMetasPorJugador({});
+      setHandicapLoteDefault('');
       setBuscarJugador('');
       alert(`¡Éxito! Se inscribieron ${res.data.agregados} jugadores al torneo.`);
     },
@@ -512,8 +538,36 @@ export default function DetalleTorneoPage() {
                       <td className="text-center capitalize font-medium text-gray-700">
                         <span className="badge-blue text-[10px] px-2 py-0.5">{ins.nivel}</span>
                       </td>
-                      <td className="text-center font-mono font-bold text-primary-700">
-                        {ins.meta_puntos} pts
+                      <td className="text-center">
+                        {hasRole('admin') ? (
+                          <div className="inline-flex items-center justify-center gap-1">
+                            <input
+                              type="number"
+                              min={1}
+                              max={100}
+                              defaultValue={ins.meta_puntos}
+                              key={`meta-${ins.id}-${ins.meta_puntos}`}
+                              onBlur={(e) => {
+                                const val = parseInt(e.target.value);
+                                if (!isNaN(val) && val > 0 && val !== ins.meta_puntos) {
+                                  actualizarMetaMut.mutate({ inscripcionId: ins.id, meta_puntos: val });
+                                }
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  (e.target as HTMLInputElement).blur();
+                                }
+                              }}
+                              className="w-14 text-center font-mono font-black text-emerald-950 bg-emerald-50 border border-emerald-300 rounded px-1.5 py-0.5 text-xs focus:bg-white focus:ring-2 focus:ring-emerald-500 shadow-sm"
+                              title="Haz clic o escribe para modificar el handicap de carambolas"
+                            />
+                            <span className="text-[10px] text-emerald-700 font-bold">pts</span>
+                          </div>
+                        ) : (
+                          <span className="font-mono font-bold text-primary-700">
+                            {ins.meta_puntos} pts
+                          </span>
+                        )}
                       </td>
                       <td className="text-center">
                         <span className="badge-green text-[10px] px-2 py-0.5 font-bold inline-flex items-center gap-1">
@@ -633,6 +687,42 @@ export default function DetalleTorneoPage() {
               </div>
             </div>
 
+            {/* Control Rápido de Handicap para este lote */}
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-2.5 mb-2.5 flex flex-col sm:flex-row items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="text-base">🎯</span>
+                <div>
+                  <span className="text-xs font-bold text-amber-950 block">Handicap de Carambolas:</span>
+                  <span className="text-[11px] text-amber-800">
+                    Define la meta de carambolas para los jugadores que inscribas (ej. 10, 12, 14, 15).
+                  </span>
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5 w-full sm:w-auto justify-end">
+                <span className="text-xs font-bold text-amber-900 whitespace-nowrap">Meta para todos:</span>
+                <input
+                  type="number"
+                  min="1"
+                  max="100"
+                  value={handicapLoteDefault}
+                  onChange={(e) => {
+                    const val = e.target.value === '' ? '' : parseInt(e.target.value);
+                    setHandicapLoteDefault(val);
+                    if (typeof val === 'number' && val > 0) {
+                      const updated: Record<string, number> = { ...metasPorJugador };
+                      seleccionadosLote.forEach((jId) => {
+                        updated[jId] = val;
+                      });
+                      setMetasPorJugador(updated);
+                    }
+                  }}
+                  placeholder={torneo?.meta_base ? `${torneo.meta_base}` : '14'}
+                  className="w-16 text-center font-mono font-bold bg-white border border-amber-300 rounded px-1.5 py-1 text-xs focus:ring-2 focus:ring-amber-500 shadow-sm"
+                />
+                <span className="text-xs font-bold text-amber-900">pts</span>
+              </div>
+            </div>
+
             {/* Listado de Jugadores con Checkboxes ("Chuleando") */}
             <div className="border border-gray-200 rounded-xl overflow-y-auto flex-1 divide-y divide-gray-100 min-h-[240px]">
               {todosJugadores.length === 0 ? (
@@ -674,6 +764,12 @@ export default function DetalleTorneoPage() {
                               if (yaInscrito) return;
                               if (e.target.checked) {
                                 setSeleccionadosLote([...seleccionadosLote, j.id]);
+                                if (typeof handicapLoteDefault === 'number' && handicapLoteDefault > 0) {
+                                  setMetasPorJugador({
+                                    ...metasPorJugador,
+                                    [j.id]: handicapLoteDefault,
+                                  });
+                                }
                               } else {
                                 setSeleccionadosLote(seleccionadosLote.filter((id) => id !== j.id));
                               }
@@ -694,7 +790,31 @@ export default function DetalleTorneoPage() {
                           </div>
                         </div>
 
-                        <div>
+                        <div className="flex items-center gap-2">
+                          {estaSeleccionado && !yaInscrito && (
+                            <div
+                              className="flex items-center gap-1 bg-white border border-emerald-300 rounded-lg px-2 py-0.5 shadow-sm"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <span className="text-[10px] text-gray-500 font-bold">Meta:</span>
+                              <input
+                                type="number"
+                                min="1"
+                                max="100"
+                                value={metasPorJugador[j.id] ?? (typeof handicapLoteDefault === 'number' ? handicapLoteDefault : (torneo?.meta_base || 14))}
+                                onChange={(e) => {
+                                  const val = parseInt(e.target.value);
+                                  setMetasPorJugador({
+                                    ...metasPorJugador,
+                                    [j.id]: isNaN(val) ? 14 : val,
+                                  });
+                                }}
+                                className="w-12 text-center font-mono font-black text-emerald-900 text-xs focus:outline-none"
+                              />
+                              <span className="text-[10px] text-emerald-700 font-bold">pts</span>
+                            </div>
+                          )}
+
                           {yaInscrito ? (
                             <span className="text-[10px] bg-gray-200 text-gray-700 px-2 py-0.5 rounded-full font-bold">
                               ✓ Ya Inscrito
@@ -732,7 +852,7 @@ export default function DetalleTorneoPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => inscribirLoteMut.mutate(seleccionadosLote)}
+                  onClick={() => inscribirLoteMut.mutate({ jugador_ids: seleccionadosLote, metas: metasPorJugador })}
                   disabled={seleccionadosLote.length === 0 || inscribirLoteMut.isPending}
                   className="btn-primary text-xs flex items-center gap-1 font-bold"
                 >
