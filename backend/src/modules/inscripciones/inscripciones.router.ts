@@ -7,11 +7,11 @@ const router = Router();
 // Público
 router.get('/:torneo_id', ctrl.listarParticipantes);
 
-// Admin
-router.post('/:torneo_id/lote', authGuard, roleGuard('admin'), ctrl.inscribirLote);
-router.post('/:torneo_id', authGuard, roleGuard('admin'), ctrl.inscribirJugador);
-router.put('/meta/:id', authGuard, roleGuard('admin'), ctrl.actualizarMeta);
-router.delete('/:torneo_id/:jugador_id', authGuard, roleGuard('admin'), ctrl.removerParticipante);
-router.post('/:torneo_id/sorteo', authGuard, roleGuard('admin'), ctrl.sorteoConGrupos);
+// Admin y Juez
+router.post('/:torneo_id/lote', authGuard, roleGuard('admin', 'juez'), ctrl.inscribirLote);
+router.post('/:torneo_id', authGuard, roleGuard('admin', 'juez'), ctrl.inscribirJugador);
+router.put('/meta/:id', authGuard, roleGuard('admin', 'juez'), ctrl.actualizarMeta);
+router.delete('/:torneo_id/:jugador_id', authGuard, roleGuard('admin', 'juez'), ctrl.removerParticipante);
+router.post('/:torneo_id/sorteo', authGuard, roleGuard('admin', 'juez'), ctrl.sorteoConGrupos);
 
 export default router;

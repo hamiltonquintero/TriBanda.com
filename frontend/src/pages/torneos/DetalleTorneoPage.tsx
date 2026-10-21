@@ -8,8 +8,9 @@ import GuiaInteractivaAdmin from '../../components/GuiaInteractivaAdmin';
 
 export default function DetalleTorneoPage() {
   const { id } = useParams<{ id: string }>();
-  const { hasRole } = useAuthStore();
+  const { hasRole, isAuthenticated } = useAuthStore();
   const qc = useQueryClient();
+  const puedeGestionarTorneo = hasRole('admin', 'juez') || isAuthenticated();
 
   const [modalInscribir, setModalInscribir] = useState(false);
   const [buscarJugador, setBuscarJugador] = useState('');
@@ -350,13 +351,13 @@ export default function DetalleTorneoPage() {
             <Link to={`/publico/torneos/${id}`} className="btn-outline text-white border-white/30 hover:bg-white/10">
               Vista pública
             </Link>
-            {hasRole('admin') && (
+            {puedeGestionarTorneo && (
               <Link to={`/torneos/${id}/editar`} className="btn-outline text-white border-white/30 hover:bg-white/10 flex items-center gap-1">
                 <span className="material-icons text-xs">edit</span>
                 Editar
               </Link>
             )}
-            {hasRole('admin') && (
+            {puedeGestionarTorneo && (
               <div className="flex items-center gap-1.5 bg-black/25 p-1 rounded-xl backdrop-blur-xs">
                 {torneo.estado === 'borrador' && (
                   <button
@@ -460,7 +461,7 @@ export default function DetalleTorneoPage() {
               Administra las fases (Grupos, Llaves/Playoffs, Final) en cualquier momento del torneo.
             </p>
           </div>
-          {hasRole('admin') && (
+          {puedeGestionarTorneo && (
             <button
               onClick={() => {
                 const nextOrden = (torneo.fases?.length || 0) + 1;
@@ -536,7 +537,7 @@ export default function DetalleTorneoPage() {
                 <div className="flex flex-wrap items-center gap-2 self-end sm:self-auto">
                   {f.tipo === 'grupos' || f.tipo === 'clasificatorio' ? (
                     <>
-                      {hasRole('admin') && (
+                      {puedeGestionarTorneo && (
                         <button
                           type="button"
                           onClick={() => generarPartidasFaseMut.mutate(f.id)}
@@ -566,7 +567,7 @@ export default function DetalleTorneoPage() {
                     </Link>
                   )}
 
-                  {hasRole('admin') && (
+                  {puedeGestionarTorneo && (
                     <>
                       <button
                         onClick={() => {
@@ -635,7 +636,7 @@ export default function DetalleTorneoPage() {
               </button>
             )}
 
-            {hasRole('admin') && (
+            {puedeGestionarTorneo && (
               <button
                 type="button"
                 onClick={() => {
@@ -698,7 +699,7 @@ export default function DetalleTorneoPage() {
         {!cargandoInscripciones && inscripciones.length === 0 && (
           <div className="text-center py-10 bg-gray-50 rounded-xl border border-dashed border-gray-200">
             <p className="text-gray-400 text-sm">No hay jugadores inscritos en este torneo aún.</p>
-            {hasRole('admin') && (
+            {puedeGestionarTorneo && (
               <button
                 type="button"
                 onClick={() => {
@@ -726,7 +727,7 @@ export default function DetalleTorneoPage() {
                   <th className="text-center">Carambolas</th>
                   <th className="text-center">Participación</th>
                   <th className="text-center">Pago Inscripción</th>
-                  {hasRole('admin') && <th className="text-center w-20">Acción</th>}
+                  {puedeGestionarTorneo && <th className="text-center w-20">Acción</th>}
                 </tr>
               </thead>
               <tbody>
@@ -769,7 +770,7 @@ export default function DetalleTorneoPage() {
                         <span className="badge-blue text-[10px] px-2 py-0.5">{ins.nivel}</span>
                       </td>
                       <td className="text-center">
-                        {hasRole('admin') ? (
+                        {puedeGestionarTorneo ? (
                           <div className="inline-flex items-center justify-center gap-1">
                             <input
                               type="number"
@@ -805,42 +806,40 @@ export default function DetalleTorneoPage() {
                         </span>
                       </td>
                       <td className="text-center">
-                        {hasRole('admin') ? (
-                          <label className="inline-flex items-center gap-1.5 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={ins.pago_confirmado}
-                              onChange={(e) =>
-                                togglePago.mutate({
-                                  inscripcionId: ins.id,
-                                  pago: e.target.checked,
-                                })
-                              }
-                              className="w-4 h-4 accent-green-600 rounded cursor-pointer"
-                            />
-                            <span
-                              className={`text-[10px] font-bold px-2 py-0.5 rounded ${
-                                ins.pago_confirmado
-                                  ? 'bg-green-100 text-green-800'
-                                  : 'bg-red-50 text-red-700'
-                              }`}
-                            >
-                              {ins.pago_confirmado ? 'Pagado' : 'Pendiente'}
-                            </span>
-                          </label>
+                        {puedeGestionarTorneo ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              togglePago.mutate({
+                                inscripcionId: ins.id,
+                                pago: !ins.pago_confirmado,
+                              })
+                            }
+                            disabled={togglePago.isPending}
+                            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold transition shadow-2xs active:scale-95 cursor-pointer ${
+                              ins.pago_confirmado
+                                ? 'bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border border-emerald-300'
+                                : 'bg-red-50 hover:bg-red-100 text-red-700 border border-red-200'
+                            }`}
+                            title={`Toca para marcar como ${ins.pago_confirmado ? 'Pendiente' : 'Pagado'}`}
+                          >
+                            <span>{ins.pago_confirmado ? '✓' : '⏳'}</span>
+                            <span>{ins.pago_confirmado ? 'Pagado' : 'Pendiente'}</span>
+                          </button>
                         ) : (
                           <span
-                            className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                            className={`text-[10px] font-bold px-2.5 py-1 rounded-full inline-flex items-center gap-1 ${
                               ins.pago_confirmado
-                                ? 'bg-green-100 text-green-800'
-                                : 'bg-red-50 text-red-700'
+                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                : 'bg-red-50 text-red-700 border border-red-200'
                             }`}
                           >
-                            {ins.pago_confirmado ? 'Pagado' : 'Pendiente'}
+                            <span>{ins.pago_confirmado ? '✓' : '⏳'}</span>
+                            <span>{ins.pago_confirmado ? 'Pagado' : 'Pendiente'}</span>
                           </span>
                         )}
                       </td>
-                      {hasRole('admin') && (
+                      {puedeGestionarTorneo && (
                         <td className="text-center">
                           <button
                             type="button"

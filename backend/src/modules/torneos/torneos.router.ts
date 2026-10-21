@@ -12,12 +12,12 @@ router.get('/:id/ranking', ctrl.obtenerRankingPublico);
 router.get('/:id/bracket', ctrl.obtenerBracketPublico);
 router.get('/:id/grupos', ctrl.obtenerGruposPublicos);
 
-// Solo admin
-router.post('/', authGuard, roleGuard('admin'), ctrl.crearTorneo);
-router.put('/:id', authGuard, roleGuard('admin'), ctrl.editarTorneo);
-router.patch('/:id/estado', authGuard, roleGuard('admin'), ctrl.cambiarEstado);
-router.post('/:id/fases', authGuard, roleGuard('admin'), ctrl.crearFase);
-router.put('/:id/fases/:faseId', authGuard, roleGuard('admin'), ctrl.editarFase);
-router.delete('/:id/fases/:faseId', authGuard, roleGuard('admin'), ctrl.eliminarFase);
+// Admin y Juez
+router.post('/', authGuard, roleGuard('admin', 'juez'), ctrl.crearTorneo);
+router.put('/:id', authGuard, roleGuard('admin', 'juez'), ctrl.editarTorneo);
+router.patch('/:id/estado', authGuard, roleGuard('admin', 'juez'), ctrl.cambiarEstado);
+router.post('/:id/fases', authGuard, roleGuard('admin', 'juez'), ctrl.crearFase);
+router.put('/:id/fases/:faseId', authGuard, roleGuard('admin', 'juez'), ctrl.editarFase);
+router.delete('/:id/fases/:faseId', authGuard, roleGuard('admin', 'juez'), ctrl.eliminarFase);
 
 export default router;
