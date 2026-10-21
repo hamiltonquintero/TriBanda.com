@@ -1,4 +1,5 @@
 import prisma from '../../config/prisma';
+import { generarBracket } from '../bracket/bracket.service';
 
 // ─── TABLA DE POSICIONES EN MEMORIA (Cero Queries Adicionales) ───────────────
 
@@ -214,6 +215,13 @@ export async function asignarJugadores(grupo_id: string, jugador_ids: string[]) 
     }),
   ]);
 
+  // Autogenerar partidas para este grupo inmediatamente
+  try {
+    await generarPartidasGrupo(grupo_id);
+  } catch (err) {
+    console.warn('Auto-generación de partidas tras asignar jugadores omitida:', err);
+  }
+
   return obtenerGrupo(grupo_id);
 }
 
@@ -287,7 +295,7 @@ export async function sorteoAutomatico(fase_id: string, jugador_ids: string[], c
   return listarGrupos(fase_id);
 }
 
-// ─── GENERAR PARTIDAS AUTOMÁTICAS DE GRUPOS (Liguilla / Round-Robin) ────────
+// ─── GENERAR PARTIDAS AUTOMÁTICAS DE GRUPOS (Liguilla / Round-Robin) O PLAYOFFS ────
 
 export async function generarPartidasFase(fase_id: string) {
   const fase = await prisma.fase.findUnique({
@@ -302,13 +310,109 @@ export async function generarPartidasFase(fase_id: string) {
   });
 
   if (!fase) throw new Error('Fase no encontrada');
-  if (!fase.grupos || fase.grupos.length === 0) {
-    throw new Error('Esta fase no tiene grupos creados. Ve a la sección de Grupos y realiza el sorteo o crea grupos primero.');
+
+  // Si es fase de llaves o final, generar el cuadro/bracket automáticamente
+  if (fase.tipo === 'llaves' || fase.tipo === 'final') {
+    // 1. Buscar si hay una fase previa de grupos para obtener los clasificados
+    const faseGruposPrevia = await prisma.fase.findFirst({
+      where: {
+        torneo_id: fase.torneo_id,
+        tipo: { in: ['grupos', 'clasificatorio'] },
+        orden: { lt: fase.orden },
+      },
+      orderBy: { orden: 'desc' },
+    });
+
+    let jugador_ids: string[] = [];
+
+    if (faseGruposPrevia) {
+      try {
+        const info = await obtenerClasificados(faseGruposPrevia.id);
+        jugador_ids = (info.tabla_general || []).map((j: any) => j.jugador_id);
+      } catch (err) {
+        console.warn('No se pudieron obtener clasificados de grupos previa:', err);
+      }
+    }
+
+    // Si no hay clasificados de grupos previa, tomar los inscritos del torneo
+    if (jugador_ids.length < 2) {
+      const inscritos = await prisma.inscripcionTorneo.findMany({
+        where: { torneo_id: fase.torneo_id },
+        orderBy: { created_at: 'asc' },
+      });
+      jugador_ids = inscritos.map((i) => i.jugador_id);
+    }
+
+    if (jugador_ids.length < 2) {
+      throw new Error('Se requieren al menos 2 jugadores inscritos para generar las llaves/playoffs.');
+    }
+
+    await generarBracket(fase_id, jugador_ids);
+    const partidasBracket = await prisma.partida.findMany({
+      where: { fase_id },
+      include: { jugador_a: true, jugador_b: true },
+    });
+    return {
+      total_creadas: partidasBracket.length,
+      partidas: partidasBracket,
+      mensaje: `¡Cuadro de llaves generado exitosamente con ${partidasBracket.length} partidas!`,
+    };
   }
 
-  const gruposConJugadores = fase.grupos.filter((g) => g.jugadores && g.jugadores.length >= 2);
+  // Si no hay grupos creados pero hay al menos 3 inscritos, auto-crear grupos estándar
+  if (!fase.grupos || fase.grupos.length === 0) {
+    const inscritos = await prisma.inscripcionTorneo.findMany({
+      where: { torneo_id: fase.torneo_id },
+      orderBy: { created_at: 'asc' },
+    });
+    if (inscritos.length >= 3) {
+      const jugador_ids = inscritos.map((i) => i.jugador_id);
+      await sorteoAutomatico(fase_id, jugador_ids, fase.clasificados_por_grupo ?? 2);
+      const faseActualizada = await prisma.fase.findUnique({
+        where: { id: fase_id },
+        include: {
+          torneo: true,
+          grupos: {
+            orderBy: { numero: 'asc' },
+            include: { jugadores: { include: { jugador: true } } },
+          },
+        },
+      });
+      if (faseActualizada?.grupos) {
+        fase.grupos = faseActualizada.grupos;
+      }
+    } else {
+      throw new Error('Esta fase no tiene grupos creados. Ve a la sección de Grupos y realiza el sorteo o crea grupos primero.');
+    }
+  }
+
+  // Si los grupos existen pero están vacíos y hay inscritos, repartirlos
+  let gruposConJugadores = fase.grupos.filter((g) => g.jugadores && g.jugadores.length >= 2);
   if (gruposConJugadores.length === 0) {
-    throw new Error('Los grupos aún no tienen suficientes jugadores asignados (mínimo 2 por grupo). Realiza el sorteo de mesas primero.');
+    const inscritos = await prisma.inscripcionTorneo.findMany({
+      where: { torneo_id: fase.torneo_id },
+      orderBy: { created_at: 'asc' },
+    });
+    if (inscritos.length >= 2) {
+      const jugador_ids = inscritos.map((i) => i.jugador_id);
+      await sorteoAutomatico(fase_id, jugador_ids, fase.clasificados_por_grupo ?? 2);
+      const faseActualizada = await prisma.fase.findUnique({
+        where: { id: fase_id },
+        include: {
+          torneo: true,
+          grupos: {
+            orderBy: { numero: 'asc' },
+            include: { jugadores: { include: { jugador: true } } },
+          },
+        },
+      });
+      if (faseActualizada?.grupos) {
+        fase.grupos = faseActualizada.grupos;
+        gruposConJugadores = fase.grupos.filter((g) => g.jugadores && g.jugadores.length >= 2);
+      }
+    } else {
+      throw new Error('Los grupos aún no tienen suficientes jugadores asignados (mínimo 2 por grupo). Realiza el sorteo de mesas primero.');
+    }
   }
 
   const totalSets = Math.max(1, Math.round(Number(fase.torneo.modalidad === 'profesional' ? (fase.torneo.total_sets_default || 3) : 1)));
@@ -380,7 +484,20 @@ export async function generarPartidasFase(fase_id: string) {
     }
   }
 
-  return { total_creadas: partidasCreadas.length, partidas: partidasCreadas };
+  const todasPartidas = await prisma.partida.findMany({
+    where: { fase_id },
+    include: { jugador_a: true, jugador_b: true },
+  });
+
+  return {
+    total_creadas: partidasCreadas.length,
+    partidas: partidasCreadas,
+    total_existentes: todasPartidas.length,
+    mensaje:
+      partidasCreadas.length > 0
+        ? `Se generaron ${partidasCreadas.length} nuevas partidas para esta fase.`
+        : `Todas las partidas (${todasPartidas.length}) ya estaban generadas y listas para jugar.`,
+  };
 }
 
 // ─── AUTO-ASIGNAR JUECES / MESAS A LA PRIMERA RONDA DE LA FASE ───────────────
@@ -818,6 +935,14 @@ export async function generarPartidasGrupo(grupo_id: string) {
     }
   }
 
-  return { total_creadas: partidasCreadas.length, partidas: partidasCreadas };
+  return {
+    total_creadas: partidasCreadas.length,
+    partidas: partidasCreadas,
+    total_existentes: grupo.partidas.length + partidasCreadas.length,
+    mensaje:
+      partidasCreadas.length > 0
+        ? `Se generaron ${partidasCreadas.length} nuevas partidas para este grupo.`
+        : `Todas las partidas posibles (${grupo.partidas.length}) ya estaban generadas.`,
+  };
 }
 

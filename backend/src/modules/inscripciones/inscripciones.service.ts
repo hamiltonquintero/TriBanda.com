@@ -1,4 +1,5 @@
 import prisma from '../../config/prisma';
+import { generarPartidasFase } from '../grupos/grupos.service';
 
 // ─── HELPERS: Calcular nivel y meta según promedio histórico ─────────────────
 
@@ -182,6 +183,13 @@ export async function sorteoConGrupos(
       jids.map((jugador_id) => ({ grupo_id, jugador_id }))
     ),
   });
+
+  // Autogenerar partidas de grupos inmediatamente tras el sorteo
+  try {
+    await generarPartidasFase(fase_id);
+  } catch (err) {
+    console.warn('Auto-generación de partidas tras sorteo omitida:', err);
+  }
 
   // Retornar grupos con jugadores
   return prisma.grupo.findMany({

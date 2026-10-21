@@ -114,10 +114,12 @@ export default function DetalleTorneoPage() {
     onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ['torneo', id] });
       qc.invalidateQueries({ queryKey: ['partidas', id] });
-      alert(`⚡ ¡Listo! Se generaron ${res.data.total_creadas} partidas automáticamente.`);
+      qc.invalidateQueries({ queryKey: ['bracket', id] });
+      qc.invalidateQueries({ queryKey: ['pub-bracket', id] });
+      alert(res.data?.mensaje || `⚡ ¡Listo! Se generaron ${res.data.total_creadas} partidas automáticamente.`);
     },
     onError: (err: any) => {
-      alert(err.response?.data?.error || 'Error al generar partidas');
+      alert(err.response?.data?.error || err.message || 'Error al generar partidas');
     },
   });
 
@@ -558,13 +560,27 @@ export default function DetalleTorneoPage() {
                       </Link>
                     </>
                   ) : (
-                    <Link
-                      to={`/torneos/${id}/bracket`}
-                      className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg text-xs font-bold transition flex items-center gap-1"
-                    >
-                      <span>Ver Bracket / Llaves</span>
-                      <span className="material-icons text-xs">arrow_forward</span>
-                    </Link>
+                    <>
+                      {puedeGestionarTorneo && (
+                        <button
+                          type="button"
+                          onClick={() => generarPartidasFaseMut.mutate(f.id)}
+                          disabled={generarPartidasFaseMut.isPending}
+                          className="px-2.5 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 rounded-lg text-xs font-bold transition flex items-center gap-1 shadow-2xs"
+                          title="Genera automáticamente los cruces y partidas de esta fase de playoffs"
+                        >
+                          <span>⚡</span>
+                          <span>Partidas / Cuadro</span>
+                        </button>
+                      )}
+                      <Link
+                        to={`/torneos/${id}/bracket`}
+                        className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg text-xs font-bold transition flex items-center gap-1"
+                      >
+                        <span>Ver Bracket / Llaves</span>
+                        <span className="material-icons text-xs">arrow_forward</span>
+                      </Link>
+                    </>
                   )}
 
                   {puedeGestionarTorneo && (

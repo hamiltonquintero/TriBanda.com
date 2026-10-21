@@ -7,7 +7,8 @@ import { Grupo, FilaTabla, InfoClasificados, InscripcionTorneo } from '../../typ
 
 export default function GruposPage() {
   const { torneoId, faseId } = useParams<{ torneoId: string; faseId: string }>();
-  const { hasRole } = useAuthStore();
+  const { hasRole, isAuthenticated } = useAuthStore();
+  const puedeGestionarTorneo = hasRole('admin', 'juez') || isAuthenticated();
   const qc = useQueryClient();
   const [sorteoOpen, setSorteoOpen] = useState(false);
   const [tab, setTab] = useState<'grupos' | 'general'>('grupos');
@@ -367,7 +368,7 @@ export default function GruposPage() {
               Exportar / Imprimir Tabla General
             </button>
           )}
-          {hasRole('admin') && (
+          {puedeGestionarTorneo && (
             <>
               <button
                 onClick={() => setSorteoOpen(true)}
@@ -472,7 +473,7 @@ export default function GruposPage() {
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
-                    {hasRole('admin') && (
+                    {puedeGestionarTorneo && (
                       <Link to={`/torneos/${torneoId}/fases/${faseId}/grupos/${grupo.id}/asignar`} className="btn-secondary text-xs">
                         Asignar jugadores
                       </Link>
@@ -480,7 +481,7 @@ export default function GruposPage() {
                     <Link to={`/torneos/${torneoId}/fases/${faseId}/grupos/${grupo.id}`} className="btn-primary text-xs">
                       Ver detalle y partidas
                     </Link>
-                    {hasRole('admin') && (
+                    {puedeGestionarTorneo && (
                       <button
                         type="button"
                         onClick={() => {

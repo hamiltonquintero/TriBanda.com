@@ -1,10 +1,10 @@
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import api from '../../services/api';
-import { Jugador, Fase, Grupo, Usuario } from '../../types';
+import { Jugador, Fase, Grupo, Usuario, InscripcionTorneo } from '../../types';
 
 const schema = z.object({
   fase_id: z.string().uuid('Selecciona una fase'),
@@ -14,7 +14,7 @@ const schema = z.object({
   juez_id: z.string().optional(),
   fecha: z.string().optional(),
   hora: z.string().optional(),
-  total_sets: z.coerce.number().int().min(1).max(3),
+  total_sets: z.coerce.number().int().min(1).max(5),
 }).refine((d) => d.jugador_a_id !== d.jugador_b_id, {
   message: 'Jugador A y Jugador B no pueden ser el mismo',
   path: ['jugador_b_id'],
@@ -25,10 +25,11 @@ type FormData = z.infer<typeof schema>;
 export default function NuevaPartidaPage() {
   const { torneoId } = useParams<{ torneoId: string }>();
   const navigate = useNavigate();
+  const qc = useQueryClient();
 
   const { register, handleSubmit, watch, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
-    defaultValues: { total_sets: 3 },
+    defaultValues: { total_sets: 1 },
   });
 
   const faseId = watch('fase_id');
@@ -44,7 +45,13 @@ export default function NuevaPartidaPage() {
     enabled: !!faseId,
   });
 
-  const { data: jugadores } = useQuery<Jugador[]>({
+  const { data: inscripciones = [] } = useQuery<InscripcionTorneo[]>({
+    queryKey: ['inscripciones', torneoId],
+    queryFn: () => api.get(`/inscripciones/${torneoId}`).then((r) => r.data),
+    enabled: !!torneoId,
+  });
+
+  const { data: todosJugadores = [] } = useQuery<Jugador[]>({
     queryKey: ['jugadores-activos'],
     queryFn: () => api.get('/jugadores?activo=true').then((r) => r.data),
   });
@@ -60,12 +67,17 @@ export default function NuevaPartidaPage() {
         ...data,
         grupo_id: data.grupo_id || undefined,
         juez_id: data.juez_id || undefined,
-        fecha: data.fecha ? new Date(data.fecha).toISOString() : undefined,
+        fecha: data.fecha && data.fecha.trim() ? data.fecha : undefined,
         hora: data.hora || undefined,
       };
       return api.post('/partidas', payload);
     },
-    onSuccess: () => navigate(`/torneos/${torneoId}/partidas`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['partidas'] });
+      qc.invalidateQueries({ queryKey: ['torneo', torneoId] });
+      qc.invalidateQueries({ queryKey: ['grupos'] });
+      navigate(`/torneos/${torneoId}/partidas`);
+    },
   });
 
   return (
@@ -96,8 +108,23 @@ export default function NuevaPartidaPage() {
         <div>
           <label className="label">Jugador A *</label>
           <select {...register('jugador_a_id')} className="input">
-            <option value="">Seleccionar...</option>
-            {jugadores?.map((j) => <option key={j.id} value={j.id}>{j.nombre_completo}</option>)}
+            <option value="">Seleccionar Jugador A...</option>
+            {inscripciones.length > 0 ? (
+              <optgroup label="Jugadores Inscritos en este Torneo">
+                {inscripciones.map((ins) => (
+                  <option key={ins.jugador_id} value={ins.jugador_id}>
+                    ⭐ {ins.jugador?.nombre_completo} ({ins.meta_puntos} pts - {ins.jugador?.club_ciudad || 'Sin club'})
+                  </option>
+                ))}
+              </optgroup>
+            ) : null}
+            <optgroup label="Directorio General de Jugadores">
+              {todosJugadores.map((j) => (
+                <option key={j.id} value={j.id}>
+                  {j.nombre_completo} ({j.club_ciudad || 'Sin club'})
+                </option>
+              ))}
+            </optgroup>
           </select>
           {errors.jugador_a_id && <p className="error">{errors.jugador_a_id.message}</p>}
         </div>
@@ -105,8 +132,23 @@ export default function NuevaPartidaPage() {
         <div>
           <label className="label">Jugador B *</label>
           <select {...register('jugador_b_id')} className="input">
-            <option value="">Seleccionar...</option>
-            {jugadores?.map((j) => <option key={j.id} value={j.id}>{j.nombre_completo}</option>)}
+            <option value="">Seleccionar Jugador B...</option>
+            {inscripciones.length > 0 ? (
+              <optgroup label="Jugadores Inscritos en este Torneo">
+                {inscripciones.map((ins) => (
+                  <option key={ins.jugador_id} value={ins.jugador_id}>
+                    ⭐ {ins.jugador?.nombre_completo} ({ins.meta_puntos} pts - {ins.jugador?.club_ciudad || 'Sin club'})
+                  </option>
+                ))}
+              </optgroup>
+            ) : null}
+            <optgroup label="Directorio General de Jugadores">
+              {todosJugadores.map((j) => (
+                <option key={j.id} value={j.id}>
+                  {j.nombre_completo} ({j.club_ciudad || 'Sin club'})
+                </option>
+              ))}
+            </optgroup>
           </select>
           {errors.jugador_b_id && <p className="error">{errors.jugador_b_id.message}</p>}
         </div>
@@ -125,6 +167,7 @@ export default function NuevaPartidaPage() {
             <option value={1}>1 set</option>
             <option value={2}>2 sets</option>
             <option value={3}>3 sets (estándar)</option>
+            <option value={5}>5 sets</option>
           </select>
         </div>
 

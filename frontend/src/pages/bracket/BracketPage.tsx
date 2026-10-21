@@ -9,7 +9,8 @@ import BilateralBracketView from './BilateralBracketView';
 export default function BracketPage() {
   const { id } = useParams<{ id: string }>();
   const torneoId = id ?? '';
-  const { hasRole } = useAuthStore();
+  const { hasRole, isAuthenticated } = useAuthStore();
+  const puedeGestionarTorneo = hasRole('admin', 'juez') || isAuthenticated();
   const qc = useQueryClient();
   const [tamanoManual, setTamanoManual] = useState<number>(0); // 0 = Automático según número real de clasificados
   const [viewMode, setViewMode] = useState<'bilateral' | 'clasica'>('bilateral');
@@ -29,6 +30,12 @@ export default function BracketPage() {
     enabled: !!faseGrupos,
   });
 
+  const { data: inscripciones = [] } = useQuery<{ jugador_id: string }[]>({
+    queryKey: ['inscripciones-bracket', torneoId],
+    queryFn: () => api.get(`/inscripciones/${torneoId}`).then((r) => r.data),
+    enabled: !!torneoId,
+  });
+
   const { data, isLoading } = useQuery<BracketData>({
     queryKey: ['bracket', torneoId],
     queryFn: () => api.get(`/torneos/${torneoId}/bracket`).then((r) => r.data),
@@ -38,8 +45,14 @@ export default function BracketPage() {
 
   const generar = useMutation({
     mutationFn: async () => {
-      if (!faseGrupos || !faseLlaves) throw new Error('Falta fase de grupos o fase de llaves');
-      const ids = infoClasificados?.tabla_general.map((c) => c.jugador_id) ?? [];
+      if (!faseLlaves) throw new Error('No hay fase de llaves o playoffs configurada en este torneo');
+      let ids = infoClasificados?.tabla_general.map((c) => c.jugador_id) ?? [];
+      if (ids.length < 2 && inscripciones.length >= 2) {
+        ids = inscripciones.map((i) => i.jugador_id);
+      }
+      if (ids.length < 2) {
+        throw new Error('Se requieren al menos 2 jugadores clasificados o inscritos para generar el cuadro de llaves.');
+      }
       await api.post(`/bracket/${faseLlaves.id}/generar`, {
         jugador_ids: ids,
         ...(tamanoManual > 0 && { tamano_bracket: tamanoManual }),
@@ -48,10 +61,16 @@ export default function BracketPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['bracket', torneoId] });
       qc.invalidateQueries({ queryKey: ['pub-bracket', torneoId] });
+      qc.invalidateQueries({ queryKey: ['partidas'] });
+    },
+    onError: (err: any) => {
+      alert(err.response?.data?.error || err.message || 'Error al generar bracket');
     },
   });
 
-  const totalClasificados = infoClasificados?.total_clasificados ?? 0;
+  const totalClasificados = (infoClasificados?.total_clasificados && infoClasificados.total_clasificados > 0)
+    ? infoClasificados.total_clasificados
+    : inscripciones.length;
 
   return (
     <div className="space-y-6">
@@ -121,8 +140,8 @@ export default function BracketPage() {
         </Link>
       </div>
 
-      {/* Panel de generación — solo admin */}
-      {hasRole('admin') && (!data || data.rondas.length === 0) && (
+      {/* Panel de generación — admin o juez */}
+      {puedeGestionarTorneo && (!data || data.rondas.length === 0) && (
         <div className="card space-y-4">
           <div className="flex items-center gap-3">
             <span className="w-10 h-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center font-bold">

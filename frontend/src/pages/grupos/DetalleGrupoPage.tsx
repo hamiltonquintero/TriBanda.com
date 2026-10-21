@@ -15,12 +15,20 @@ export default function DetalleGrupoPage() {
   const { torneoId, faseId, id } = useParams<{ torneoId: string; faseId: string; id: string }>();
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const { hasRole } = useAuthStore();
+  const { hasRole, isAuthenticated } = useAuthStore();
+  const puedeGestionarTorneo = hasRole('admin', 'juez') || isAuthenticated();
 
   const [modalReemplazar, setModalReemplazar] = useState(false);
   const [jugadorSaliente, setJugadorSaliente] = useState<string>('');
   const [jugadorEntrante, setJugadorEntrante] = useState<string>('');
   const [buscarSustituto, setBuscarSustituto] = useState('');
+
+  // Estado para Nueva Partida Manual en Grupo
+  const [modalNuevaPartida, setModalNuevaPartida] = useState(false);
+  const [partidaJugadorA, setPartidaJugadorA] = useState<string>('');
+  const [partidaJugadorB, setPartidaJugadorB] = useState<string>('');
+  const [partidaJuezId, setPartidaJuezId] = useState<string>('');
+  const [partidaSets, setPartidaSets] = useState<number>(1);
 
   const { data: grupo, isLoading } = useQuery<Grupo>({
     queryKey: ['grupo', id],
@@ -30,7 +38,13 @@ export default function DetalleGrupoPage() {
   const { data: todosJugadores = [] } = useQuery<Jugador[]>({
     queryKey: ['jugadores-activos-sustitutos'],
     queryFn: () => api.get('/jugadores?activo=true').then((r) => r.data),
-    enabled: modalReemplazar,
+    enabled: modalReemplazar || modalNuevaPartida,
+  });
+
+  const { data: jueces = [] } = useQuery<{ id: string; nombre: string }[]>({
+    queryKey: ['jueces-oficiales'],
+    queryFn: () => api.get('/auth/usuarios?rol=juez').then((r) => r.data),
+    enabled: modalNuevaPartida,
   });
 
   const eliminarGrupoMut = useMutation({
@@ -50,10 +64,39 @@ export default function DetalleGrupoPage() {
     onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ['grupo', id] });
       qc.invalidateQueries({ queryKey: ['grupos', faseId] });
-      alert(`Se generaron ${res.data.total_creadas} partidas para este grupo.`);
+      qc.invalidateQueries({ queryKey: ['partidas'] });
+      alert(res.data?.mensaje || `Se generaron ${res.data.total_creadas} partidas para este grupo.`);
     },
     onError: (err: any) => {
       alert(err.response?.data?.error || 'Error al generar partidas.');
+    },
+  });
+
+  const crearPartidaManualMut = useMutation({
+    mutationFn: () => {
+      if (!partidaJugadorA || !partidaJugadorB) throw new Error('Selecciona ambos jugadores');
+      if (partidaJugadorA === partidaJugadorB) throw new Error('Los jugadores deben ser distintos');
+      return api.post('/partidas', {
+        fase_id: faseId,
+        grupo_id: id,
+        jugador_a_id: partidaJugadorA,
+        jugador_b_id: partidaJugadorB,
+        juez_id: partidaJuezId || undefined,
+        total_sets: partidaSets,
+      });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['grupo', id] });
+      qc.invalidateQueries({ queryKey: ['grupos', faseId] });
+      qc.invalidateQueries({ queryKey: ['partidas'] });
+      setModalNuevaPartida(false);
+      setPartidaJugadorA('');
+      setPartidaJugadorB('');
+      setPartidaJuezId('');
+      alert('¡Partida manual creada exitosamente para este grupo!');
+    },
+    onError: (err: any) => {
+      alert(err.response?.data?.error || err.message || 'Error al crear la partida manual');
     },
   });
 
@@ -123,19 +166,36 @@ export default function DetalleGrupoPage() {
           </p>
         </div>
 
-        {hasRole('admin') && (
+        {puedeGestionarTorneo && (
           <div className="flex flex-wrap gap-2">
-            {(!grupo.partidas || grupo.partidas.length === 0) && (
-              <button
-                onClick={() => generarPartidasMut.mutate()}
-                disabled={generarPartidasMut.isPending || (grupo.jugadores?.length || 0) < 2}
-                className="btn-outline text-xs text-primary-700 border-primary-300 hover:bg-primary-50 flex items-center gap-1"
-                title="Generar partidos round robin para este grupo"
-              >
-                <span className="material-icons text-sm">auto_awesome</span>
-                Generar Partidas
-              </button>
-            )}
+            <button
+              onClick={() => generarPartidasMut.mutate()}
+              disabled={generarPartidasMut.isPending || (grupo.jugadores?.length || 0) < 2}
+              className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg text-xs font-bold transition flex items-center gap-1 shadow-2xs"
+              title="Generar todas las combinaciones de partidas restantes de este grupo"
+            >
+              <span className="material-icons text-sm">auto_awesome</span>
+              {generarPartidasMut.isPending
+                ? 'Generando...'
+                : (!grupo.partidas || grupo.partidas.length === 0)
+                ? '⚡ Generar Partidas'
+                : '⚡ Generar Partidas Faltantes'}
+            </button>
+
+            <button
+              onClick={() => {
+                const j1 = grupo.jugadores?.[0]?.jugador_id || '';
+                const j2 = grupo.jugadores?.[1]?.jugador_id || '';
+                setPartidaJugadorA(j1);
+                setPartidaJugadorB(j2);
+                setModalNuevaPartida(true);
+              }}
+              className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-bold transition flex items-center gap-1 shadow-2xs"
+              title="Crear un enfrentamiento manual específico para este grupo"
+            >
+              <span>+</span>
+              <span>Nueva Partida Manual</span>
+            </button>
 
             <button
               onClick={() => setModalReemplazar(true)}
@@ -200,7 +260,7 @@ export default function DetalleGrupoPage() {
                   <th className="text-center">M. Serie</th>
                   <th className="text-center">CAR</th>
                   <th className="text-center">ENT</th>
-                  {hasRole('admin') && <th className="text-center w-20">Acción</th>}
+                  {puedeGestionarTorneo && <th className="text-center w-20">Acción</th>}
                 </tr>
               </thead>
               <tbody>
@@ -226,7 +286,7 @@ export default function DetalleGrupoPage() {
                       <td className="text-center font-semibold text-accent-700">{fila.mayor_serie ?? 0}</td>
                       <td className="text-center">{fila.carambolas}</td>
                       <td className="text-center">{fila.entradas}</td>
-                      {hasRole('admin') && (
+                      {puedeGestionarTorneo && (
                         <td className="text-center">
                           <button
                             type="button"
@@ -260,7 +320,7 @@ export default function DetalleGrupoPage() {
         {(!grupo.partidas || grupo.partidas.length === 0) ? (
           <div className="text-center py-6 bg-gray-50 rounded-xl border border-dashed border-gray-200">
             <p className="text-gray-400 text-sm">No hay partidas generadas para este grupo.</p>
-            {hasRole('admin') && (grupo.jugadores?.length || 0) >= 2 && (
+            {puedeGestionarTorneo && (grupo.jugadores?.length || 0) >= 2 && (
               <button
                 onClick={() => generarPartidasMut.mutate()}
                 className="btn-primary text-xs mt-3 inline-flex items-center gap-1"
@@ -396,6 +456,160 @@ export default function DetalleGrupoPage() {
                 className="btn-primary text-xs"
               >
                 {reemplazarMut.isPending ? 'Sustituyendo...' : 'Confirmar Reemplazo'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Nueva Partida Manual en Grupo */}
+      {modalNuevaPartida && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-lg border border-gray-100 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-3 border-b mb-4">
+              <div className="flex items-center gap-2">
+                <span className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold">
+                  🎱
+                </span>
+                <div>
+                  <h3 className="font-bold text-base text-gray-900">
+                    Nueva Partida Manual — Grupo {grupo.numero}
+                  </h3>
+                  <p className="text-[11px] text-gray-500">
+                    Crea cualquier enfrentamiento directo o desempate para este grupo sin restricciones.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setModalNuevaPartida(false)}
+                className="text-gray-400 hover:text-gray-600 p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {/* Jugador A */}
+              <div>
+                <label className="label text-xs font-bold text-gray-800 flex items-center gap-1.5">
+                  <span>⚪ Jugador A (Bola Blanca) *</span>
+                </label>
+                <select
+                  value={partidaJugadorA}
+                  onChange={(e) => setPartidaJugadorA(e.target.value)}
+                  className="input text-xs font-medium"
+                >
+                  <option value="">-- Seleccionar Jugador A --</option>
+                  <optgroup label="Jugadores de este Grupo">
+                    {grupo.jugadores?.map((gj) => (
+                      <option key={gj.jugador_id} value={gj.jugador_id}>
+                        ⭐ {gj.jugador?.nombre_completo} ({gj.jugador?.club_ciudad || 'Sin club'})
+                      </option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="Todos los Jugadores Activos">
+                    {todosJugadores
+                      .filter((j) => !grupo.jugadores?.some((gj) => gj.jugador_id === j.id))
+                      .map((j) => (
+                        <option key={j.id} value={j.id}>
+                          {j.nombre_completo} ({j.club_ciudad || 'Sin club'})
+                        </option>
+                      ))}
+                  </optgroup>
+                </select>
+              </div>
+
+              {/* Jugador B */}
+              <div>
+                <label className="label text-xs font-bold text-gray-800 flex items-center gap-1.5">
+                  <span>🟡 Jugador B (Bola Amarilla) *</span>
+                </label>
+                <select
+                  value={partidaJugadorB}
+                  onChange={(e) => setPartidaJugadorB(e.target.value)}
+                  className="input text-xs font-medium"
+                >
+                  <option value="">-- Seleccionar Jugador B --</option>
+                  <optgroup label="Jugadores de este Grupo">
+                    {grupo.jugadores?.map((gj) => (
+                      <option key={gj.jugador_id} value={gj.jugador_id}>
+                        ⭐ {gj.jugador?.nombre_completo} ({gj.jugador?.club_ciudad || 'Sin club'})
+                      </option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="Todos los Jugadores Activos">
+                    {todosJugadores
+                      .filter((j) => !grupo.jugadores?.some((gj) => gj.jugador_id === j.id))
+                      .map((j) => (
+                        <option key={j.id} value={j.id}>
+                          {j.nombre_completo} ({j.club_ciudad || 'Sin club'})
+                        </option>
+                      ))}
+                  </optgroup>
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                {/* Sets */}
+                <div>
+                  <label className="label text-xs font-bold text-gray-800">Sets de Partida</label>
+                  <select
+                    value={partidaSets}
+                    onChange={(e) => setPartidaSets(Number(e.target.value))}
+                    className="input text-xs font-medium"
+                  >
+                    <option value={1}>1 Set (Estándar grupos)</option>
+                    <option value={2}>2 Sets</option>
+                    <option value={3}>3 Sets (Al mejor de 3)</option>
+                    <option value={5}>5 Sets</option>
+                  </select>
+                </div>
+
+                {/* Juez Asignado */}
+                <div>
+                  <label className="label text-xs font-bold text-gray-800">Juez Oficial (Opcional)</label>
+                  <select
+                    value={partidaJuezId}
+                    onChange={(e) => setPartidaJuezId(e.target.value)}
+                    className="input text-xs font-medium"
+                  >
+                    <option value="">Sin juez asignado</option>
+                    {jueces.map((j) => (
+                      <option key={j.id} value={j.id}>
+                        ⚖️ {j.nombre}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {partidaJugadorA && partidaJugadorB && partidaJugadorA === partidaJugadorB && (
+                <p className="text-xs text-red-600 bg-red-50 p-2 rounded-lg border border-red-200">
+                  ⚠️ Jugador A y Jugador B no pueden ser la misma persona.
+                </p>
+              )}
+            </div>
+
+            <div className="flex gap-2 justify-end pt-4 mt-4 border-t">
+              <button
+                type="button"
+                onClick={() => setModalNuevaPartida(false)}
+                className="btn-secondary text-xs"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => crearPartidaManualMut.mutate()}
+                disabled={
+                  !partidaJugadorA ||
+                  !partidaJugadorB ||
+                  partidaJugadorA === partidaJugadorB ||
+                  crearPartidaManualMut.isPending
+                }
+                className="btn-primary text-xs flex items-center gap-1.5"
+              >
+                <span>{crearPartidaManualMut.isPending ? 'Guardando...' : 'Crear Partida en Grupo'}</span>
               </button>
             </div>
           </div>

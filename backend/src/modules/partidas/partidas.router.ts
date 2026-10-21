@@ -15,9 +15,9 @@ router.get('/planilla/:id', authGuard, ctrl.obtenerPlanilla);
 router.get('/marcador/:id', ctrl.obtenerMarcador);
 router.get('/jugador/:jugador_id', authGuard, ctrl.historialJugador);
 
-// Admin
-router.post('/', authGuard, roleGuard('admin'), ctrl.crearPartida);
-router.patch('/:id/reabrir', authGuard, roleGuard('admin'), ctrl.reabrirPartida);
+// Admin o Juez
+router.post('/', authGuard, roleGuard('admin', 'juez'), ctrl.crearPartida);
+router.patch('/:id/reabrir', authGuard, roleGuard('admin', 'juez'), ctrl.reabrirPartida);
 router.patch('/:id/rechazar-correccion', authGuard, roleGuard('admin'), ctrl.rechazarCorreccion);
 router.patch('/:id/asignar-juez', authGuard, roleGuard('admin', 'juez'), ctrl.asignarJuez);
 

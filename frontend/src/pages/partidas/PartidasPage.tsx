@@ -7,7 +7,8 @@ import { useAuthStore } from '../../store/authStore';
 
 export default function PartidasPage() {
   const { torneoId } = useParams<{ torneoId: string }>();
-  const { hasRole } = useAuthStore();
+  const { hasRole, isAuthenticated } = useAuthStore();
+  const puedeGestionarTorneo = hasRole('admin', 'juez') || isAuthenticated();
   const qc = useQueryClient();
   const [filtroFase, setFiltroFase] = useState('');
   const [tabEstado, setTabEstado] = useState<'todas' | 'en_curso' | 'pendiente' | 'finalizada'>('todas');
@@ -145,7 +146,7 @@ export default function PartidasPage() {
             </Link>
           </div>
 
-          {hasRole('admin') && (
+          {puedeGestionarTorneo && (
             <div className="flex flex-wrap items-center gap-2">
               <button
                 onClick={() => autoAsignarJuecesMut.mutate()}
@@ -333,7 +334,7 @@ export default function PartidasPage() {
                     className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md hover:shadow-lg transition inline-flex items-center gap-1.5"
                   >
                     <span>⚡</span>
-                    <span>{generarPartidasMut.isPending ? 'Generando...' : 'Autogenerar Partidas de Grupos Ahora'}</span>
+                    <span>{generarPartidasMut.isPending ? 'Generando...' : 'Autogenerar Partidas de la Fase Ahora'}</span>
                   </button>
                 );
               })()}
@@ -479,7 +480,7 @@ export default function PartidasPage() {
 
                         {/* Juez Oficial */}
                         <td className="px-3 py-3">
-                          {hasRole('admin') ? (
+                          {puedeGestionarTorneo ? (
                             <select
                               value={p.juez_id || ''}
                               onChange={(e) =>

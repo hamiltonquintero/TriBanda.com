@@ -168,6 +168,59 @@ export async function crearPartida(data: {
   meta_a?: number;
   meta_b?: number;
 }) {
+  const fase = await prisma.fase.findUnique({
+    where: { id: data.fase_id },
+    include: { torneo: true },
+  });
+  if (!fase) throw new Error('Fase no encontrada');
+
+  const totalSets = Math.max(
+    1,
+    Math.round(
+      Number(
+        data.total_sets ||
+          (fase.torneo.modalidad === 'profesional'
+            ? fase.torneo.total_sets_default || 3
+            : 1)
+      )
+    )
+  );
+
+  let defaultMeta = Math.round(Number(fase.torneo.meta_base || 30));
+  let esModoLibre = Boolean(fase.torneo.modo_libre);
+  if (fase.torneo.modalidad === 'relampago') {
+    defaultMeta = fase.torneo.distancia_relampago === 'corto' ? 10 : 18;
+    esModoLibre = true;
+  }
+
+  // Si no se pasaron metas individuales, buscarlas en InscripcionTorneo
+  let metaA = data.meta_a ? Math.round(Number(data.meta_a)) : undefined;
+  let metaB = data.meta_b ? Math.round(Number(data.meta_b)) : undefined;
+
+  if (!metaA || !metaB) {
+    const inscripciones = await prisma.inscripcionTorneo.findMany({
+      where: {
+        torneo_id: fase.torneo_id,
+        jugador_id: { in: [data.jugador_a_id, data.jugador_b_id] },
+      },
+    });
+    const map = new Map(inscripciones.map((i) => [i.jugador_id, i.meta_puntos]));
+    if (!metaA) metaA = Math.round(Number(map.get(data.jugador_a_id) ?? defaultMeta)) || 30;
+    if (!metaB) metaB = Math.round(Number(map.get(data.jugador_b_id) ?? defaultMeta)) || 30;
+  }
+
+  const limiteEntradas = esModoLibre
+    ? null
+    : (fase.torneo.limite_entradas ? Math.round(Number(fase.torneo.limite_entradas)) : null);
+
+  const setsCreate = Array.from({ length: totalSets }, (_, k) => ({ numero: k + 1 }));
+
+  let parsedFecha: Date | null = null;
+  if (data.fecha && data.fecha.trim()) {
+    const d = new Date(data.fecha);
+    if (!isNaN(d.getTime())) parsedFecha = d;
+  }
+
   return prisma.partida.create({
     data: {
       fase_id: data.fase_id,
@@ -175,17 +228,24 @@ export async function crearPartida(data: {
       jugador_a_id: data.jugador_a_id,
       jugador_b_id: data.jugador_b_id,
       juez_id: data.juez_id || undefined,
-      fecha: data.fecha ? new Date(data.fecha) : null,
+      fecha: parsedFecha,
       hora: data.hora || undefined,
-      total_sets: data.total_sets ?? 3,
-      meta_a: data.meta_a ?? null,
-      meta_b: data.meta_b ?? null,
+      total_sets: totalSets,
+      meta_a: metaA,
+      meta_b: metaB,
+      limite_entradas: limiteEntradas,
+      modo_libre: esModoLibre,
       estado: 'pendiente',
+      sets: {
+        create: setsCreate,
+      },
     },
     include: {
-      jugador_a: true, jugador_b: true,
+      jugador_a: true,
+      jugador_b: true,
       juez: { select: { id: true, nombre: true, email: true } },
       fase: true,
+      sets: true,
     },
   });
 }
