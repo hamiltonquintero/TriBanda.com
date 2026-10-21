@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams, Link } from 'react-router-dom';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import api from '../../services/api';
 import { useAuthStore } from '../../store/authStore';
 
@@ -63,6 +63,16 @@ export default function MarcadorPage() {
     refetchInterval: 4000,
     staleTime: 2000,
   });
+
+  // Auto-seleccionar el set activo (primer set incompleto) cuando la partida está en juego
+  useEffect(() => {
+    if (marcador && marcador.estado === 'en_curso') {
+      const setIncompleto = marcador.sets.find((s) => !s.ganador_id);
+      if (setIncompleto && setIncompleto.numero !== setActivo) {
+        setSetActivo(setIncompleto.numero);
+      }
+    }
+  }, [marcador?.sets, marcador?.estado]);
 
   const { data: listaJueces = [] } = useQuery<{ id: string; nombre: string; rol?: string }[]>({
     queryKey: ['usuarios-jueces'],
@@ -631,21 +641,31 @@ export default function MarcadorPage() {
         </div>
       )}
 
-      {/* Ganador */}
+      {/* Ganador Oficial de la Partida */}
       {ganador && (
-        <div className="bg-green-50 border-2 border-green-300 rounded-xl p-4 text-center mb-6">
-          <p className="text-3xl mb-1">🏆</p>
-          <p className="text-green-700 font-bold text-xl">Ganador: {ganador.nombre_completo}</p>
-          <p className="text-sm text-green-600 mt-1">
-            {resumen.sets_ganados_a} — {resumen.sets_ganados_b} sets
+        <div className="bg-emerald-50 border-2 border-emerald-400 rounded-2xl p-5 text-center mb-6 shadow-md">
+          <p className="text-4xl mb-1">🏆</p>
+          <p className="text-xs uppercase tracking-widest text-emerald-700 font-extrabold">Partida Concluida</p>
+          <h2 className="text-emerald-950 font-black text-2xl mt-0.5">
+            Ganador: {ganador.nombre_completo}
+          </h2>
+          <p className="text-base font-bold text-emerald-800 mt-1">
+            Victoria {ganador.id === jugador_a.id ? resumen.sets_ganados_a : resumen.sets_ganados_b} — {ganador.id === jugador_a.id ? resumen.sets_ganados_b : resumen.sets_ganados_a} en sets
           </p>
           {!confirmada && hasRole('admin', 'juez') && (
-            <button onClick={() => confirmar.mutate()} disabled={confirmar.isPending}
-              className="btn-primary mt-3">
-              ✓ Confirmar resultado
+            <button
+              onClick={() => confirmar.mutate()}
+              disabled={confirmar.isPending}
+              className="btn-primary mt-4 text-sm px-6 py-2.5 shadow"
+            >
+              ✓ Confirmar resultado oficial
             </button>
           )}
-          {confirmada && <p className="text-xs text-green-500 mt-2">✓ Resultado confirmado</p>}
+          {confirmada && (
+            <p className="text-xs font-semibold text-emerald-600 mt-2 bg-emerald-100/60 inline-block px-3 py-1 rounded-full">
+              ✓ Resultado confirmado y registrado en ranking
+            </p>
+          )}
         </div>
       )}
 
@@ -708,7 +728,7 @@ export default function MarcadorPage() {
           {/* Centro */}
           <div>
             <div className="bg-black/30 backdrop-blur-sm inline-block px-3 py-1 rounded-full text-gray-200 text-xs mb-2 border border-white/10">
-              {total_sets === 1 ? '🏁 Set Único Directo' : `Set ${setActivo} de ${total_sets}`}
+              {estado === 'finalizada' ? '🏁 Partida Finalizada' : total_sets === 1 ? '🏁 Set Único Directo' : `Set ${setActivo} de ${total_sets}`}
             </div>
             {total_sets > 1 ? (
               <>
@@ -780,6 +800,30 @@ export default function MarcadorPage() {
             >
               {total_sets === 1 ? '🏁 Concluir y Finalizar Partida' : `Finalizar set ${setActivo}`}
             </button>
+          </div>
+        )}
+
+        {/* Notificación de set ya concluido */}
+        {setData && setData.ganador_id && (
+          <div className="mt-5 bg-black/40 backdrop-blur-sm border border-emerald-400/40 rounded-xl p-3 text-center text-white">
+            <p className="text-xs font-bold text-emerald-300 flex items-center justify-center gap-1.5">
+              <span>✓</span>
+              <span>
+                Set {setActivo} concluido — Ganó {setData.ganador_id === jugador_a.id ? jugador_a.nombre_completo : jugador_b.nombre_completo}
+              </span>
+            </p>
+            {estado === 'en_curso' && sets.some((s) => !s.ganador_id) && (
+              <button
+                type="button"
+                onClick={() => {
+                  const proximo = sets.find((s) => !s.ganador_id);
+                  if (proximo) setSetActivo(proximo.numero);
+                }}
+                className="mt-2.5 text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-1.5 rounded-lg transition shadow flex items-center gap-1 mx-auto"
+              >
+                <span>▶ Ir al Set en juego</span>
+              </button>
+            )}
           </div>
         )}
       </div>

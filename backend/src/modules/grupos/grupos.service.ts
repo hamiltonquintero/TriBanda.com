@@ -467,12 +467,8 @@ export async function obtenerClasificados(fase_id: string, clasificadosPorGrupoO
   const todosClasificados = gruposConClasificados.flatMap((g) => g.clasificados);
 
   // Ordenar la Tabla General de Siembra:
-  // Regla estándar: primero todos los 1° de grupo, luego todos los 2° de grupo, etc.
-  // Y dentro de cada grupo de posición, desempatar por criterios oficiales UMB:
+  // Criterios oficiales UMB / Federación: Puntos, Promedio General, Promedio Particular, Mayor Serie, Carambolas, Menos Entradas
   todosClasificados.sort((a, b) => {
-    if (a.posicion_en_grupo !== b.posicion_en_grupo) {
-      return a.posicion_en_grupo - b.posicion_en_grupo;
-    }
     if (b.puntos !== a.puntos) return b.puntos - a.puntos;
     if (b.promedio !== a.promedio) return b.promedio - a.promedio;
     if (b.promedio_particular !== a.promedio_particular) return b.promedio_particular - a.promedio_particular;

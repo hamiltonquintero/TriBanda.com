@@ -329,7 +329,7 @@ export async function marcadorAccion(
   return obtenerMarcador(partida_id);
 }
 
-// ─── CAMBIO DE TURNO (nueva entrada) ────────────────────────────────────────
+// ─── CAMBIO DE TURNO (alternancia reglamentaria de entradas) ─────────────────
 
 export async function cambioTurno(partida_id: string, set_numero: number) {
   const partida = await prisma.partida.findUnique({
@@ -340,36 +340,47 @@ export async function cambioTurno(partida_id: string, set_numero: number) {
 
   const set = partida.sets.find((s) => s.numero === set_numero);
   if (!set) throw new Error(`Set ${set_numero} no encontrado`);
+  if (set.ganador_id) throw new Error(`El set ${set_numero} ya está finalizado`);
 
-  // Calcular siguiente número de entrada para cada jugador
-  const entradasA = set.entradas.filter((e) => e.jugador_id === partida.jugador_a_id);
-  const entradasB = set.entradas.filter((e) => e.jugador_id === partida.jugador_b_id);
-  const nextA = entradasA.length + 1;
-  const nextB = entradasB.length + 1;
+  // Determinar quién tiene la salida en este set (Set 1: salida oficial; Set 2: el rival; Set 3: salida oficial)
+  const jugadorSalidaId = set_numero % 2 === 1
+    ? (partida.jugador_salida_id || partida.jugador_a_id)
+    : (partida.jugador_salida_id === partida.jugador_a_id ? partida.jugador_b_id : partida.jugador_a_id);
+  const jugadorContraId = jugadorSalidaId === partida.jugador_a_id ? partida.jugador_b_id : partida.jugador_a_id;
+
+  const entradasSalida = set.entradas.filter((e) => e.jugador_id === jugadorSalidaId);
+  const entradasContra = set.entradas.filter((e) => e.jugador_id === jugadorContraId);
 
   const limiteEntradas = partida.modo_libre ? null : (partida.limite_entradas ?? null);
 
-  if (limiteEntradas && nextA > limiteEntradas && nextB > limiteEntradas) {
-    // Set completo por límite de entradas — calcular ganador
-    await calcularGanadorSet(set.id);
-    await calcularGanadorPartida(partida_id);
-    return obtenerMarcador(partida_id);
-  }
+  // Caso 1: Estaba tirando el jugador de salida (entradasSalida.length <= entradasContra.length)
+  // Ahora le toca el turno al jugador de contra-salida en la MISMA entrada
+  if (entradasSalida.length <= entradasContra.length) {
+    const numEntrada = entradasContra.length + 1;
+    // Si el jugador de salida no anotó carambolas en este tiro, asegurar que quede registrada su entrada en 0
+    const yaRegistrada = entradasSalida.some((e) => e.numero_entrada === numEntrada);
+    if (!yaRegistrada) {
+      await prisma.entradaSet.create({
+        data: { set_id: set.id, jugador_id: jugadorSalidaId, numero_entrada: numEntrada, carambolas: 0 },
+      });
+    }
+  } else {
+    // Caso 2: Estaba tirando el jugador de contra-salida (entradasSalida.length > entradasContra.length)
+    // El jugador de contra-salida acaba de terminar su tiro: LA ENTRADA SE COMPLETA
+    const numEntrada = entradasSalida.length;
+    const yaRegistrada = entradasContra.some((e) => e.numero_entrada === numEntrada);
+    if (!yaRegistrada) {
+      await prisma.entradaSet.create({
+        data: { set_id: set.id, jugador_id: jugadorContraId, numero_entrada: numEntrada, carambolas: 0 },
+      });
+    }
 
-  // Crear nueva entrada con 0 carambolas para ambos jugadores
-  const creates = [];
-  if (!limiteEntradas || nextA <= limiteEntradas) {
-    creates.push(prisma.entradaSet.create({
-      data: { set_id: set.id, jugador_id: partida.jugador_a_id, numero_entrada: nextA, carambolas: 0 },
-    }));
-  }
-  if (!limiteEntradas || nextB <= limiteEntradas) {
-    creates.push(prisma.entradaSet.create({
-      data: { set_id: set.id, jugador_id: partida.jugador_b_id, numero_entrada: nextB, carambolas: 0 },
-    }));
-  }
-  if (creates.length > 0) {
-    await prisma.$transaction(creates);
+    // Verificar si se alcanzó el límite reglamentario de entradas
+    if (limiteEntradas && numEntrada >= limiteEntradas) {
+      await calcularGanadorSet(set.id);
+      await calcularGanadorPartida(partida_id);
+      return obtenerMarcador(partida_id);
+    }
   }
 
   return obtenerMarcador(partida_id);
@@ -386,9 +397,19 @@ export async function obtenerMarcador(id: string) {
     const carambolasA = entradasA.reduce((acc, e) => acc + e.carambolas, 0);
     const carambolasB = entradasB.reduce((acc, e) => acc + e.carambolas, 0);
 
+    const jugadorSalidaId = set.numero % 2 === 1
+      ? (partida.jugador_salida_id || partida.jugador_a_id)
+      : (partida.jugador_salida_id === partida.jugador_a_id ? partida.jugador_b_id : partida.jugador_a_id);
+    const jugadorContraId = jugadorSalidaId === partida.jugador_a_id ? partida.jugador_b_id : partida.jugador_a_id;
+    const countSalida = set.entradas.filter((e) => e.jugador_id === jugadorSalidaId).length;
+    const countContra = set.entradas.filter((e) => e.jugador_id === jugadorContraId).length;
+    const turnoJugadorId = countSalida <= countContra ? jugadorSalidaId : jugadorContraId;
+
     return {
       numero: set.numero,
       ganador_id: set.ganador_id,
+      jugador_salida_id: jugadorSalidaId,
+      turno_jugador_id: turnoJugadorId,
       carambolas_a: carambolasA,
       carambolas_b: carambolasB,
       entradas_a: entradasA.length,

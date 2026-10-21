@@ -39,10 +39,29 @@ export default function PartidasPage() {
   const asignarJuezMut = useMutation({
     mutationFn: ({ partidaId, juezId }: { partidaId: string; juezId: string | null }) =>
       api.patch(`/partidas/${partidaId}/asignar-juez`, { juez_id: juezId }),
+    onMutate: async ({ partidaId, juezId }) => {
+      await qc.cancelQueries({ queryKey: ['partidas', torneoId, filtroFase] });
+      const previousPartidas = qc.getQueryData<Partida[]>(['partidas', torneoId, filtroFase]);
+      if (previousPartidas) {
+        const juezObj = jueces.find((j) => j.id === juezId) || null;
+        qc.setQueryData<Partida[]>(
+          ['partidas', torneoId, filtroFase],
+          previousPartidas.map((p) =>
+            p.id === partidaId
+              ? { ...p, juez_id: juezId || undefined, juez: juezObj }
+              : p
+          )
+        );
+      }
+      return { previousPartidas };
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['partidas'] });
     },
-    onError: (err: any) => {
+    onError: (err: any, _vars, context) => {
+      if (context?.previousPartidas) {
+        qc.setQueryData(['partidas', torneoId, filtroFase], context.previousPartidas);
+      }
       alert(err.response?.data?.error || 'Error al asignar juez');
     },
   });

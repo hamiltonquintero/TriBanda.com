@@ -166,6 +166,164 @@ export default function GruposPage() {
     }, 250);
   }
 
+  function exportarImprimirTablaGeneral() {
+    if (!infoClasificados || !infoClasificados.tabla_general || infoClasificados.tabla_general.length === 0) {
+      alert('Aún no hay jugadores clasificados para generar la lista general.');
+      return;
+    }
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    const fechaHoy = new Date().toLocaleDateString('es-CO', {
+      day: '2-digit', month: 'long', year: 'numeric',
+    });
+
+    const pasanDirecto = infoClasificados.esquema_ajuste?.clasificados_directos_count ?? 0;
+    const jueganAjuste = infoClasificados.esquema_ajuste?.juegan_ajuste_count ?? 0;
+    const potencia = infoClasificados.esquema_ajuste?.potencia_objetivo ?? 0;
+
+    const filasHtml = infoClasificados.tabla_general.map((j, idx) => {
+      const esDirecto = idx < pasanDirecto;
+      return `
+        <tr style="${esDirecto ? 'background-color: #ecfdf5;' : 'background-color: #fffbeb;'}">
+          <td style="text-align: center; font-weight: 800; font-size: 11px;">${j.siembra_general}</td>
+          <td style="font-weight: 700;">${j.nombre_completo}</td>
+          <td style="color: #4b5563;">${j.club || '-'}</td>
+          <td style="text-align: center; font-weight: 600;">G${j.grupo_numero} (${j.posicion_en_grupo}°)</td>
+          <td style="text-align: center; font-weight: 800; font-size: 11px;">${j.puntos}</td>
+          <td style="text-align: center; font-weight: 800; color: #166534; font-size: 11px;">${j.promedio.toFixed(3)}</td>
+          <td style="text-align: center; color: #4b5563;">${j.promedio_particular ? j.promedio_particular.toFixed(3) : '-'}</td>
+          <td style="text-align: center; font-weight: 600;">${j.mayor_serie ?? 0}</td>
+          <td style="text-align: center;">${j.carambolas}</td>
+          <td style="text-align: center;">${j.entradas}</td>
+          <td style="text-align: center;">
+            <span style="display: inline-block; padding: 2px 8px; border-radius: 9999px; font-size: 9.5px; font-weight: 700; ${
+              esDirecto
+                ? 'background-color: #dcfce7; color: #166534; border: 1px solid #86efac;'
+                : 'background-color: #fef3c7; color: #92400e; border: 1px solid #fde68a;'
+            }">
+              ${esDirecto ? '✓ PASE DIRECTO' : '⚡ JUEGA AJUSTE'}
+            </span>
+          </td>
+        </tr>
+      `;
+    }).join('');
+
+    const crucesHtml = (infoClasificados.esquema_ajuste?.cruces_ajuste || []).map((c, i) => `
+      <div style="border: 1px solid #d1d5db; border-radius: 6px; padding: 6px 10px; background: white; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center; font-size: 11px;">
+        <span style="font-weight: 700; color: #b45309;">Partida Ajuste #${i + 1}</span>
+        <span><strong>${c.jugador_a.nombre_completo}</strong> (${c.jugador_a.promedio.toFixed(3)}) <em style="color:#6b7280;">vs</em> <strong>${c.jugador_b.nombre_completo}</strong> (${c.jugador_b.promedio.toFixed(3)})</span>
+      </div>
+    `).join('');
+
+    const docHtml = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Tabla General de Siembra & Ajuste - TriBanda</title>
+          <style>
+            @page { size: portrait; margin: 12mm; }
+            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #111827; margin: 0; padding: 10px; }
+            .header { border-bottom: 3px solid #166534; padding-bottom: 8px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: flex-end; }
+            .title { font-size: 18px; font-weight: 800; color: #166534; text-transform: uppercase; letter-spacing: 0.5px; }
+            .sub { font-size: 11px; color: #4b5563; margin-top: 2px; }
+            .resumen-cajas { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 14px; }
+            .caja { border: 1px solid #d1d5db; border-radius: 6px; padding: 6px 8px; text-align: center; background: #f9fafb; }
+            .caja-val { font-size: 16px; font-weight: 800; color: #166534; }
+            .caja-lbl { font-size: 9.5px; color: #4b5563; text-transform: uppercase; font-weight: 600; }
+            table { width: 100%; border-collapse: collapse; font-size: 10px; margin-bottom: 16px; }
+            th { background: #166534; color: white; padding: 6px 4px; border: 1px solid #15803d; font-size: 9.5px; text-transform: uppercase; }
+            td { padding: 5px 4px; border: 1px solid #e5e7eb; }
+            .firmas { margin-top: 30px; display: grid; grid-template-columns: repeat(2, 1fr); gap: 40px; text-align: center; font-size: 11px; color: #374151; }
+            .linea-firma { border-top: 1px solid #4b5563; margin-top: 40px; padding-top: 4px; font-weight: 600; }
+            .footer { margin-top: 20px; text-align: center; font-size: 9.5px; color: #9ca3af; border-top: 1px solid #e5e7eb; padding-top: 6px; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <div>
+              <div class="title">🎱 Lista General de Siembra & Ronda de Ajuste</div>
+              <div class="sub">Orden Oficial UMB: Puntos → Prom. Gral → Prom. Part → Mayor Serie → Carambolas → Menos Entradas</div>
+            </div>
+            <div style="text-align: right; font-size: 11px; color: #4b5563;">
+              <div>Fecha: <strong>${fechaHoy}</strong></div>
+              <div>Formato: <strong>L. GENERAL</strong></div>
+            </div>
+          </div>
+
+          <div class="resumen-cajas">
+            <div class="caja">
+              <div class="caja-val">${infoClasificados.tabla_general.length}</div>
+              <div class="caja-lbl">Total Clasificados</div>
+            </div>
+            <div class="caja">
+              <div class="caja-val">${potencia}</div>
+              <div class="caja-lbl">Cuadro Principal</div>
+            </div>
+            <div class="caja" style="background: #ecfdf5; border-color: #86efac;">
+              <div class="caja-val" style="color: #15803d;">${pasanDirecto}</div>
+              <div class="caja-lbl" style="color: #166534;">Pasan Directo</div>
+            </div>
+            <div class="caja" style="background: #fffbeb; border-color: #fde68a;">
+              <div class="caja-val" style="color: #b45309;">${jueganAjuste}</div>
+              <div class="caja-lbl" style="color: #92400e;">Juegan Ajuste</div>
+            </div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 28px; text-align: center;">Siembra</th>
+                <th style="text-align: left;">Jugador</th>
+                <th style="text-align: left;">Club</th>
+                <th style="text-align: center;">Grupo / Pos</th>
+                <th style="text-align: center;">Pts</th>
+                <th style="text-align: center;">Prom. Gral</th>
+                <th style="text-align: center;">Prom. Part</th>
+                <th style="text-align: center;">M. Serie</th>
+                <th style="text-align: center;">Car</th>
+                <th style="text-align: center;">Ent</th>
+                <th style="text-align: center; width: 100px;">Destino</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${filasHtml}
+            </tbody>
+          </table>
+
+          ${crucesHtml ? `
+            <div style="margin-top: 10px; margin-bottom: 20px;">
+              <div style="font-weight: 800; font-size: 12px; color: #92400e; margin-bottom: 6px; text-transform: uppercase;">
+                ⚡ Cruces Oficiales de la Ronda de Ajuste (${jueganAjuste / 2} Partidas):
+              </div>
+              ${crucesHtml}
+            </div>
+          ` : ''}
+
+          <div class="firmas">
+            <div>
+              <div class="linea-firma">Director General del Torneo</div>
+            </div>
+            <div>
+              <div class="linea-firma">Juez Árbitro Oficial</div>
+            </div>
+          </div>
+
+          <div class="footer">
+            Sistema Oficial TriBanda — Software Profesional de Billar a Tres Bandas • Desarrollado por Hamilton Quintero
+          </div>
+        </body>
+      </html>
+    `;
+
+    printWindow.document.write(docHtml);
+    printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => {
+      printWindow.print();
+    }, 250);
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -185,6 +343,16 @@ export default function GruposPage() {
             >
               <span className="material-icons text-sm">print</span>
               Exportar / Imprimir Grupos
+            </button>
+          )}
+          {infoClasificados?.tabla_general && infoClasificados.tabla_general.length > 0 && (
+            <button
+              onClick={exportarImprimirTablaGeneral}
+              className="btn-outline text-xs text-emerald-800 border-emerald-300 bg-emerald-50 hover:bg-emerald-100 flex items-center gap-1 font-semibold shadow-2xs"
+              title="Imprimir o exportar lista general de siembra (L. General) en formato listado"
+            >
+              <span className="material-icons text-sm">format_list_numbered</span>
+              Exportar / Imprimir Tabla General
             </button>
           )}
           {hasRole('admin') && (
@@ -353,9 +521,22 @@ export default function GruposPage() {
 
           {/* Tabla unificada general */}
           <div className="bg-white rounded-xl shadow p-5">
-            <h3 className="font-heading font-bold text-gray-900 mb-3">
-              Lista General de Siembra (Orden Oficial)
-            </h3>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+              <div>
+                <h3 className="font-heading font-bold text-gray-900">
+                  Lista General de Siembra (Orden Oficial)
+                </h3>
+                <p className="text-xs text-gray-500">Orden estricto por Puntos, Promedio General, Particular y Mayor Serie.</p>
+              </div>
+              <button
+                type="button"
+                onClick={exportarImprimirTablaGeneral}
+                className="btn-primary text-xs flex items-center gap-1.5 shadow-sm self-start sm:self-auto"
+              >
+                <span className="material-icons text-sm">print</span>
+                <span>Imprimir Listado Oficial (L. General)</span>
+              </button>
+            </div>
             <div className="overflow-x-auto">
               <table className="table-billar">
                 <thead>
