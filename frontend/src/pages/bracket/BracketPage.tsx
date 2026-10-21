@@ -11,7 +11,7 @@ export default function BracketPage() {
   const torneoId = id ?? '';
   const { hasRole } = useAuthStore();
   const qc = useQueryClient();
-  const [tamanoManual, setTamanoManual] = useState<number>(32); // Default a Cuadro de 32 (Playoffs 32 Oficial)
+  const [tamanoManual, setTamanoManual] = useState<number>(0); // 0 = Automático según número real de clasificados
   const [viewMode, setViewMode] = useState<'bilateral' | 'clasica'>('bilateral');
 
   const { data: fases = [] } = useQuery<Fase[]>({
@@ -168,17 +168,23 @@ export default function BracketPage() {
           </div>
 
           <div>
-            <label className="label">Formato del Cuadro</label>
+            <label className="label">Formato del Cuadro de Playoffs</label>
             <select
               value={tamanoManual}
               onChange={(e) => setTamanoManual(Number(e.target.value))}
               className="input max-w-md font-medium"
             >
-              <option value={32}>Cuadro de 32 (Oficial Playoffs 32 — con Pases Directos si hay &lt; 32)</option>
-              <option value={16}>Cuadro de 16 (Octavos de Final)</option>
-              <option value={8}>Cuadro de 8 (Cuartos de Final)</option>
-              <option value={0}>Automático (según número de clasificados)</option>
+              <option value={0}>
+                ⭐ Automático según inscritos/clasificados ({totalClasificados <= 4 ? 'Cuadro de 4' : totalClasificados <= 8 ? 'Cuadro de 8' : totalClasificados <= 16 ? 'Cuadro de 16' : 'Cuadro de 32'})
+              </option>
+              <option value={16}>Cuadro de 16 (Octavos hacia la final — ignora Dieciseisavos)</option>
+              <option value={8}>Cuadro de 8 (Cuartos hacia la final — ignora Octavos y Dieciseisavos)</option>
+              <option value={4}>Cuadro de 4 (Semifinales y Gran Final)</option>
+              <option value={32}>Cuadro de 32 Completo (Playoffs 32)</option>
             </select>
+            <p className="text-[11px] text-gray-500 mt-1">
+              El diseño bilateral estilo fútbol se adapta al tamaño elegido: si hay 16 jugadores, comienza directamente desde Octavos sin mostrar casillas vacías de 32.
+            </p>
           </div>
 
           <button

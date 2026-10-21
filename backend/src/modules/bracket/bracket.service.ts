@@ -44,13 +44,22 @@ export async function generarBracket(fase_id: string, jugador_ids: string[], tam
   await prisma.bracketSlot.deleteMany({ where: { fase_id } });
   await prisma.partida.deleteMany({ where: { fase_id, grupo_id: null } });
 
-  // 2. Determinar tamaño de cuadro P (32, 16, 8, 4)
+  // 2. Determinar tamaño de cuadro P (4, 8, 16, 32, 64) adaptativo según N
   let P: number;
   if (tamano_manual && [4, 8, 16, 32, 64].includes(tamano_manual)) {
     P = tamano_manual;
   } else {
-    // Si N <= 8 usar 8; si N <= 16 usar 16; por defecto para el formato Playoffs usar 32
-    P = N <= 8 ? 8 : N <= 16 ? 16 : 32;
+    // Adaptación automática al número real de clasificados:
+    // 2 a 4 jugadores -> Cuadro de 4 (Semifinales y Final)
+    // 5 a 8 jugadores -> Cuadro de 8 (Cuartos, Semifinales y Final)
+    // 9 a 16 jugadores -> Cuadro de 16 (Octavos hacia adelante)
+    // 17 a 32 jugadores -> Cuadro de 32 (Dieciseisavos hacia adelante)
+    // > 32 jugadores -> Cuadro de 64
+    if (N <= 4) P = 4;
+    else if (N <= 8) P = 8;
+    else if (N <= 16) P = 16;
+    else if (N <= 32) P = 32;
+    else P = 64;
   }
 
   // Si N > P, truncar a los primeros P jugadores según el ranking

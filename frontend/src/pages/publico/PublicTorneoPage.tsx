@@ -160,7 +160,7 @@ export default function PublicTorneoPage() {
             >
               {t === 'ranking' && '📊 Tabla de Ranking'}
               {t === 'partidas' && '🎱 Resultados'}
-              {t === 'bracket' && '🏆 Llaves & Ajuste'}
+              {t === 'bracket' && '🏆 Cuadro Playoffs (Llaves)'}
               {t === 'grupos' && '👥 Fase de Grupos'}
             </button>
           ))}
@@ -251,6 +251,22 @@ export default function PublicTorneoPage() {
 
         {tab === 'bracket' && (
           <div className="space-y-4">
+            <div className="bg-white/10 backdrop-blur-md border border-white/15 rounded-2xl p-4 text-white flex items-center justify-between shadow-lg">
+              <div className="flex items-center gap-3">
+                <span className="w-10 h-10 rounded-xl bg-amber-400 text-black flex items-center justify-center font-black text-xl shadow">
+                  🏆
+                </span>
+                <div>
+                  <h3 className="font-heading font-black text-sm text-white">
+                    Cuadro Oficial de Playoffs (Llaves Finales)
+                  </h3>
+                  <p className="text-xs text-white/80">
+                    Estructura bilateral estilo fútbol: las llaves avanzan desde las alas laterales convergiendo hacia la Gran Final en el centro.
+                  </p>
+                </div>
+              </div>
+            </div>
+
             {!bracket?.rondas?.length ? (
               <div className="bg-white rounded-xl shadow-xl p-8 text-center text-gray-400">
                 <span className="material-icons text-5xl text-gray-300 block mb-2">account_tree</span>
