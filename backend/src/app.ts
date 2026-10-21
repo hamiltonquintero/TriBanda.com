@@ -48,20 +48,33 @@ app.use(cors({
 }));
 
 
-// Rate limiting global: 100 requests por minuto por IP
+// Confiar en proxies inversos (Render, Netlify, Railway, Heroku, Cloudflare)
+// Permite obtener la IP real del cliente desde X-Forwarded-For
+app.set('trust proxy', 1);
+
+// Rate limiting global: Alta capacidad para marcadores y torneos en vivo (5000 req/min)
+// Las peticiones autenticadas y las de marcador/partidas quedan exentas para evitar bloqueos
 const globalLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 200,
+  max: 5000,
+  skip: (req) => {
+    // Nunca limitar rutas de tiempo real, partidas, marcador o health
+    if (req.path.startsWith('/api/v1/partidas')) return true;
+    if (req.path === '/api/v1/health') return true;
+    // Eximir usuarios autenticados (jueces, admin en partidas)
+    if (req.headers.authorization) return true;
+    return false;
+  },
   message: { error: 'Demasiadas solicitudes. Intenta de nuevo en un minuto.' },
   standardHeaders: true,
   legacyHeaders: false,
 });
 app.use(globalLimiter);
 
-// Rate limiting estricto para login: 5 intentos por minuto
+// Rate limiting para login: 30 intentos por minuto por IP
 const loginLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 5,
+  max: 30,
   message: { error: 'Demasiados intentos de login. Espera un minuto.' },
   standardHeaders: true,
   legacyHeaders: false,

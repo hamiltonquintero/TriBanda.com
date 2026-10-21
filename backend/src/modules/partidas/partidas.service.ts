@@ -567,13 +567,18 @@ export async function resolverDesempateSet(
 
 export async function confirmarPartida(id: string, usuario_id: string, usuario_rol: string) {
   const partida = await prisma.partida.findUnique({
-    where: { id }, include: { fase: { select: { torneo_id: true } } },
+    where: { id },
+    include: {
+      fase: { select: { torneo_id: true } },
+      juez: { select: { id: true, email: true } },
+    },
   });
   if (!partida) throw new Error('Partida no encontrada');
   if (partida.confirmada && partida.bloqueada) throw new Error('La partida ya fue confirmada');
   if (partida.estado !== 'finalizada') throw new Error('La partida no está finalizada');
 
-  if (usuario_rol !== 'admin' && partida.juez_id && partida.juez_id !== usuario_id) {
+  const esJuezAutoGenerado = partida.juez?.email?.startsWith('juez.');
+  if (usuario_rol !== 'admin' && partida.juez_id && partida.juez_id !== usuario_id && !esJuezAutoGenerado) {
     throw new Error('Solo el juez asignado o un admin puede confirmar');
   }
 

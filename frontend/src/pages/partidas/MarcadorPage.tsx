@@ -65,8 +65,13 @@ export default function MarcadorPage() {
   const { data: marcador, isLoading } = useQuery<MarcadorData>({
     queryKey: ['marcador', id],
     queryFn: () => api.get(`/partidas/marcador/${id}`).then((r) => r.data),
-    refetchInterval: 4000,
-    staleTime: 2000,
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      if (!data || data.estado === 'finalizada' || data.confirmada) return false;
+      return 5000;
+    },
+    refetchIntervalInBackground: false,
+    staleTime: 3000,
   });
 
   // Auto-seleccionar el set activo (primer set incompleto) cuando la partida está en juego
@@ -83,6 +88,7 @@ export default function MarcadorPage() {
     queryKey: ['usuarios-jueces'],
     queryFn: () => api.get('/auth/usuarios').then((r) => (Array.isArray(r.data) ? r.data : [])).catch(() => []),
     enabled: hasRole('admin', 'juez'),
+    staleTime: 60000,
   });
 
   const iniciar = useMutation({
@@ -145,38 +151,41 @@ export default function MarcadorPage() {
     mutationFn: (data: { jugador_id: string; set_numero: number }) =>
       api.post(`/partidas/${id}/marcador`, { ...data, accion: 'sumar' }),
     onMutate: async (vars) => {
-      await qc.cancelQueries({ queryKey: ['marcador', id] });
+      // 1. Actualización optimista síncrona inmediata (0ms de retraso táctil)
       const previo = qc.getQueryData<MarcadorData>(['marcador', id]);
-      if (!previo) return { previo };
+      if (previo) {
+        const esA = vars.jugador_id === previo.jugador_a.id;
+        const sets = previo.sets.map((s) => {
+          if (s.numero !== vars.set_numero) return s;
+          return {
+            ...s,
+            carambolas_a: esA ? s.carambolas_a + 1 : s.carambolas_a,
+            carambolas_b: !esA ? s.carambolas_b + 1 : s.carambolas_b,
+          };
+        });
 
-      const esA = vars.jugador_id === previo.jugador_a.id;
-      const sets = previo.sets.map((s) => {
-        if (s.numero !== vars.set_numero) return s;
-        return {
-          ...s,
-          carambolas_a: esA ? s.carambolas_a + 1 : s.carambolas_a,
-          carambolas_b: !esA ? s.carambolas_b + 1 : s.carambolas_b,
+        const totalCarA = sets.reduce((acc, s) => acc + s.carambolas_a, 0);
+        const totalCarB = sets.reduce((acc, s) => acc + s.carambolas_b, 0);
+        const entA = previo.resumen.entradas_a;
+        const entB = previo.resumen.entradas_b;
+
+        const optimistic: MarcadorData = {
+          ...previo,
+          sets,
+          resumen: {
+            ...previo.resumen,
+            carambolas_a: totalCarA,
+            carambolas_b: totalCarB,
+            promedio_a: entA > 0 ? Math.round((totalCarA / entA) * 1000) / 1000 : 0,
+            promedio_b: entB > 0 ? Math.round((totalCarB / entB) * 1000) / 1000 : 0,
+          },
         };
-      });
 
-      const totalCarA = sets.reduce((acc, s) => acc + s.carambolas_a, 0);
-      const totalCarB = sets.reduce((acc, s) => acc + s.carambolas_b, 0);
-      const entA = previo.resumen.entradas_a;
-      const entB = previo.resumen.entradas_b;
+        qc.setQueryData<MarcadorData>(['marcador', id], optimistic);
+      }
 
-      const optimistic: MarcadorData = {
-        ...previo,
-        sets,
-        resumen: {
-          ...previo.resumen,
-          carambolas_a: totalCarA,
-          carambolas_b: totalCarB,
-          promedio_a: entA > 0 ? Math.round((totalCarA / entA) * 1000) / 1000 : 0,
-          promedio_b: entB > 0 ? Math.round((totalCarB / entB) * 1000) / 1000 : 0,
-        },
-      };
-
-      qc.setQueryData<MarcadorData>(['marcador', id], optimistic);
+      // 2. Cancelar consultas en vuelo en segundo plano
+      await qc.cancelQueries({ queryKey: ['marcador', id] });
       return { previo };
     },
     onSuccess: (res) => {
@@ -195,38 +204,41 @@ export default function MarcadorPage() {
     mutationFn: (data: { jugador_id: string; set_numero: number }) =>
       api.post(`/partidas/${id}/marcador`, { ...data, accion: 'restar' }),
     onMutate: async (vars) => {
-      await qc.cancelQueries({ queryKey: ['marcador', id] });
+      // 1. Actualización optimista síncrona inmediata (0ms de retraso táctil)
       const previo = qc.getQueryData<MarcadorData>(['marcador', id]);
-      if (!previo) return { previo };
+      if (previo) {
+        const esA = vars.jugador_id === previo.jugador_a.id;
+        const sets = previo.sets.map((s) => {
+          if (s.numero !== vars.set_numero) return s;
+          return {
+            ...s,
+            carambolas_a: esA ? Math.max(0, s.carambolas_a - 1) : s.carambolas_a,
+            carambolas_b: !esA ? Math.max(0, s.carambolas_b - 1) : s.carambolas_b,
+          };
+        });
 
-      const esA = vars.jugador_id === previo.jugador_a.id;
-      const sets = previo.sets.map((s) => {
-        if (s.numero !== vars.set_numero) return s;
-        return {
-          ...s,
-          carambolas_a: esA ? Math.max(0, s.carambolas_a - 1) : s.carambolas_a,
-          carambolas_b: !esA ? Math.max(0, s.carambolas_b - 1) : s.carambolas_b,
+        const totalCarA = sets.reduce((acc, s) => acc + s.carambolas_a, 0);
+        const totalCarB = sets.reduce((acc, s) => acc + s.carambolas_b, 0);
+        const entA = previo.resumen.entradas_a;
+        const entB = previo.resumen.entradas_b;
+
+        const optimistic: MarcadorData = {
+          ...previo,
+          sets,
+          resumen: {
+            ...previo.resumen,
+            carambolas_a: totalCarA,
+            carambolas_b: totalCarB,
+            promedio_a: entA > 0 ? Math.round((totalCarA / entA) * 1000) / 1000 : 0,
+            promedio_b: entB > 0 ? Math.round((totalCarB / entB) * 1000) / 1000 : 0,
+          },
         };
-      });
 
-      const totalCarA = sets.reduce((acc, s) => acc + s.carambolas_a, 0);
-      const totalCarB = sets.reduce((acc, s) => acc + s.carambolas_b, 0);
-      const entA = previo.resumen.entradas_a;
-      const entB = previo.resumen.entradas_b;
+        qc.setQueryData<MarcadorData>(['marcador', id], optimistic);
+      }
 
-      const optimistic: MarcadorData = {
-        ...previo,
-        sets,
-        resumen: {
-          ...previo.resumen,
-          carambolas_a: totalCarA,
-          carambolas_b: totalCarB,
-          promedio_a: entA > 0 ? Math.round((totalCarA / entA) * 1000) / 1000 : 0,
-          promedio_b: entB > 0 ? Math.round((totalCarB / entB) * 1000) / 1000 : 0,
-        },
-      };
-
-      qc.setQueryData<MarcadorData>(['marcador', id], optimistic);
+      // 2. Cancelar consultas en vuelo en segundo plano
+      await qc.cancelQueries({ queryKey: ['marcador', id] });
       return { previo };
     },
     onSuccess: (res) => {
@@ -244,30 +256,33 @@ export default function MarcadorPage() {
   const turno = useMutation({
     mutationFn: (set_numero: number) => api.post(`/partidas/${id}/turno`, { set_numero }),
     onMutate: async (set_numero) => {
-      await qc.cancelQueries({ queryKey: ['marcador', id] });
+      // 1. Actualización optimista síncrona inmediata del turno
       const previo = qc.getQueryData<MarcadorData>(['marcador', id]);
-      if (!previo) return { previo };
+      if (previo) {
+        const sets = previo.sets.map((s) => {
+          if (s.numero !== set_numero) return s;
+          const actualTurno = s.turno_jugador_id || (
+            set_numero % 2 === 1
+              ? (previo.jugador_salida_id || previo.jugador_a.id)
+              : (previo.jugador_salida_id === previo.jugador_a.id ? previo.jugador_b.id : previo.jugador_a.id)
+          );
+          const nuevoTurno = actualTurno === previo.jugador_a.id ? previo.jugador_b.id : previo.jugador_a.id;
+          return {
+            ...s,
+            turno_jugador_id: nuevoTurno,
+          };
+        });
 
-      const sets = previo.sets.map((s) => {
-        if (s.numero !== set_numero) return s;
-        const actualTurno = s.turno_jugador_id || (
-          set_numero % 2 === 1
-            ? (previo.jugador_salida_id || previo.jugador_a.id)
-            : (previo.jugador_salida_id === previo.jugador_a.id ? previo.jugador_b.id : previo.jugador_a.id)
-        );
-        const nuevoTurno = actualTurno === previo.jugador_a.id ? previo.jugador_b.id : previo.jugador_a.id;
-        return {
-          ...s,
-          turno_jugador_id: nuevoTurno,
+        const optimistic: MarcadorData = {
+          ...previo,
+          sets,
         };
-      });
 
-      const optimistic: MarcadorData = {
-        ...previo,
-        sets,
-      };
+        qc.setQueryData<MarcadorData>(['marcador', id], optimistic);
+      }
 
-      qc.setQueryData<MarcadorData>(['marcador', id], optimistic);
+      // 2. Cancelar consultas en vuelo en segundo plano
+      await qc.cancelQueries({ queryKey: ['marcador', id] });
       return { previo };
     },
     onSuccess: (res) => {
