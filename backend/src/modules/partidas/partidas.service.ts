@@ -65,7 +65,7 @@ async function calcularGanadorSet(set_id: string): Promise<string | null> {
 
   if (es_empate) {
     // Empate exacto: no se asigna ganador automáticamente, queda pendiente para Carambola de Oro
-    await prisma.set.update({ where: { id: set_id }, data: { ganador_id: null } });
+    await prisma.set.update({ where: { id: set_id }, data: { ganador_id: null, desempate_oro: true } });
     return null;
   }
 
@@ -580,7 +580,7 @@ export async function cambioTurno(partida_id: string, set_numero: number) {
       // NO se crean más entradas, NO se permite avanzar más.
       await prisma.set.update({
         where: { id: set.id },
-        data: { ganador_id: null },
+        data: { ganador_id: null, desempate_oro: true },
       });
       return obtenerMarcador(partida_id);
     } else {
@@ -628,11 +628,27 @@ export async function obtenerMarcador(id: string) {
 
     const { es_empate } = evaluarResultadoSet(carambolasA, carambolasB, partida.meta_a, partida.meta_b);
 
+    const metaA = partida.meta_a ?? null;
+    const metaB = partida.meta_b ?? null;
+    const metaAlcanzadaAmbos = metaA !== null && metaB !== null && carambolasA >= metaA && carambolasB >= metaB && entradasA.length === entradasB.length && entradasA.length > 0;
+
+    // Solo es empate reglamentario que requiere desempate (Carambola de Oro) si:
+    // 1. El set está marcado con desempate_oro y sin ganador, O
+    // 2. Se alcanzó el límite de entradas reglamentarias para ambos y están empatados sin ganador, O
+    // 3. Se alcanzó la meta en igualdad de entradas y están empatados sin ganador.
+    const esEmpateReglamentario = Boolean(
+      !set.ganador_id && (
+        set.desempate_oro ||
+        (limiteAlcanzado && es_empate) ||
+        (metaAlcanzadaAmbos && es_empate)
+      )
+    );
+
     return {
       numero: set.numero,
       ganador_id: set.ganador_id,
       desempate_oro: !!set.desempate_oro,
-      es_empate: es_empate && !set.ganador_id,
+      es_empate: esEmpateReglamentario,
       limite_entradas_alcanzado: limiteAlcanzado,
       jugador_salida_id: salidaId,
       turno_jugador_id: turnoJugadorId,

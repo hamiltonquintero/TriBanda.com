@@ -361,7 +361,27 @@ export default function MarcadorPage() {
     setData?.limite_entradas_alcanzado ||
     (!marcador.modo_libre && limiteEntradasNum && (setData?.entradas_a ?? 0) >= limiteEntradasNum && (setData?.entradas_b ?? 0) >= limiteEntradasNum)
   );
-  const setEnDesempateOro = Boolean(setData && setData.es_empate && !setData.ganador_id);
+
+  const metaAlcanzadaAmbos = Boolean(
+    meta_a && meta_b &&
+    (setData?.carambolas_a ?? 0) >= meta_a &&
+    (setData?.carambolas_b ?? 0) >= meta_b &&
+    (setData?.entradas_a ?? 0) === (setData?.entradas_b ?? 0) &&
+    (setData?.entradas_a ?? 0) > 0
+  );
+
+  // Un set está en desempate por Carambola de Oro ÚNICAMENTE si:
+  // 1. Está explícitamente marcado en desempate_oro sin ganador asignado, O
+  // 2. Se agotó el límite reglamentario de entradas (ambos deportistas) y están empatados, O
+  // 3. Ambos completaron la meta reglamentaria en igualdad de entradas y están empatados.
+  const setEnDesempateOro = Boolean(
+    setData &&
+    !setData.ganador_id &&
+    (
+      setData.desempate_oro ||
+      (setData.es_empate && (entradasLimiteAlcanzado || Boolean(setData.limite_entradas_alcanzado) || metaAlcanzadaAmbos))
+    )
+  );
   const setBloqueadoParaAnotar = Boolean(setData?.ganador_id || setEnDesempateOro || entradasLimiteAlcanzado);
 
   return (
@@ -965,13 +985,15 @@ export default function MarcadorPage() {
         {setData && setEnDesempateOro && (
           <div className="mt-5 bg-gradient-to-r from-amber-950 via-yellow-950 to-amber-950 border-2 border-yellow-400 rounded-2xl p-5 sm:p-6 text-center text-white shadow-2xl animate-fade-in ring-4 ring-yellow-400/30">
             <div className="inline-flex items-center gap-2 bg-yellow-400 text-yellow-950 text-xs font-black px-4 py-1.5 rounded-full uppercase tracking-wider mb-2 shadow-lg">
-              <span>⚔️</span> LÍMITE DE ENTRADAS ALCANZADO — EMPATE REGLAMENTARIO
+              <span>⚔️</span> {entradasLimiteAlcanzado ? 'LÍMITE DE ENTRADAS ALCANZADO — EMPATE REGLAMENTARIO' : 'EMPATE REGLAMENTARIO'}
             </div>
             <h3 className="text-xl sm:text-2xl font-black text-yellow-300 mb-2">
               Desempate: Carambola de Oro
             </h3>
             <p className="text-xs sm:text-sm text-yellow-100/90 max-w-lg mx-auto mb-2 leading-relaxed">
-              Ambos deportistas finalizaron sus entradas reglamentarias ({setData.entradas_a} de {marcador.limite_entradas || 25}) igualados por hándicap ({setData.carambolas_a} pts vs {setData.carambolas_b} pts).
+              {entradasLimiteAlcanzado
+                ? `Ambos deportistas finalizaron sus entradas reglamentarias (${setData.entradas_a} de ${marcador.limite_entradas || 25}) igualados por hándicap (${setData.carambolas_a} pts vs ${setData.carambolas_b} pts).`
+                : `Ambos deportistas concluyeron igualados por hándicap (${setData.carambolas_a} pts vs ${setData.carambolas_b} pts).`}
             </p>
             <p className="text-xs text-yellow-200/90 max-w-lg mx-auto mb-5 leading-relaxed bg-black/40 p-3 rounded-xl border border-yellow-400/20">
               🔒 <strong>Entradas y casillas bloqueadas.</strong> No se permiten más turnos ni modificaciones de carambolas. Cada deportista ejecuta su tiro inicial ilimitado en la mesa. <strong>El juez determina a continuación quién ganó la Carambola de Oro:</strong>
@@ -1006,19 +1028,20 @@ export default function MarcadorPage() {
           </div>
         )}
 
-        {/* Acciones de set opcionales (Solo visibles si el set está en juego normal) */}
-        {puedeEditar && setData && !setData.ganador_id && !setEnDesempateOro && !entradasLimiteAlcanzado && (
+        {/* Acciones de set opcionales (Solo visibles si el set está en juego normal o pendiente de cierre) */}
+        {puedeEditar && setData && !setData.ganador_id && !setEnDesempateOro && (
           <div className="flex flex-wrap items-center justify-center gap-2 mt-5">
             <button
               onClick={() => finSet.mutate(setActivo)}
-              className="text-gray-300 hover:text-white text-xs bg-white/10 hover:bg-white/20 border border-white/20 px-4 py-2 rounded-lg transition"
+              disabled={finSet.isPending}
+              className="text-gray-300 hover:text-white text-xs bg-white/10 hover:bg-white/20 border border-white/20 px-4 py-2 rounded-lg transition active:scale-95 cursor-pointer"
             >
               {total_sets === 1 ? '🏁 Concluir y Finalizar Partida' : `Finalizar set ${setActivo}`}
             </button>
             <button
               type="button"
               onClick={() => setModalDesempateOro(true)}
-              className="text-yellow-300 hover:text-yellow-200 text-xs bg-yellow-400/10 hover:bg-yellow-400/20 border border-yellow-400/40 px-4 py-2 rounded-lg transition flex items-center gap-1.5"
+              className="text-yellow-300 hover:text-yellow-200 text-xs bg-yellow-400/10 hover:bg-yellow-400/20 border border-yellow-400/40 px-4 py-2 rounded-lg transition flex items-center gap-1.5 active:scale-95 cursor-pointer"
             >
               <span>⚔️</span> Carambola de Oro (Desempate)
             </button>
