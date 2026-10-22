@@ -382,7 +382,7 @@ export default function MarcadorPage() {
       (setData.es_empate && (entradasLimiteAlcanzado || Boolean(setData.limite_entradas_alcanzado) || metaAlcanzadaAmbos))
     )
   );
-  const setBloqueadoParaAnotar = Boolean(setData?.ganador_id || setEnDesempateOro || entradasLimiteAlcanzado);
+  const setBloqueadoParaAnotar = Boolean(setData?.ganador_id || setEnDesempateOro);
 
   return (
     <div className="max-w-2xl mx-auto">
@@ -1024,6 +1024,32 @@ export default function MarcadorPage() {
               </div>
             ) : (
               <p className="text-xs text-yellow-300/80 italic">A la espera de que el juez oficial declare el ganador del desempate...</p>
+            )}
+          </div>
+        )}
+
+        {/* Panel cuando se agota el límite de entradas con un ganador en carambolas */}
+        {setData && entradasLimiteAlcanzado && !setData.ganador_id && !setEnDesempateOro && (
+          <div className="mt-5 bg-gradient-to-r from-emerald-950 via-green-950 to-emerald-950 border-2 border-emerald-400 rounded-2xl p-5 text-center text-white shadow-xl animate-fade-in ring-4 ring-emerald-400/30">
+            <div className="inline-flex items-center gap-2 bg-emerald-400 text-emerald-950 text-xs font-black px-4 py-1.5 rounded-full uppercase tracking-wider mb-2 shadow-lg">
+              <span>🏁</span> LÍMITE DE ENTRADAS COMPLETADO ({setData.entradas_a} de {marcador.limite_entradas || 25})
+            </div>
+            <h3 className="text-lg sm:text-xl font-black text-emerald-300 mb-1">
+              Liderando Set {setActivo}: <span className="text-yellow-300">{(setData.carambolas_a ?? 0) > (setData.carambolas_b ?? 0) ? jugador_a.nombre_completo : jugador_b.nombre_completo}</span>
+            </h3>
+            <p className="text-xs text-emerald-100/90 mb-4">
+              Puntaje alcanzado: {jugador_a.nombre_completo} ({setData.carambolas_a} pts) vs {jugador_b.nombre_completo} ({setData.carambolas_b} pts)
+            </p>
+            {puedeEditar && (
+              <button
+                type="button"
+                onClick={() => finSet.mutate(setActivo)}
+                disabled={finSet.isPending}
+                className="bg-emerald-400 hover:bg-emerald-300 text-emerald-950 font-black px-6 py-3 rounded-xl shadow-lg transition text-xs sm:text-sm active:scale-95 cursor-pointer mx-auto flex items-center justify-center gap-2"
+              >
+                <span>🏆</span>
+                <span>{total_sets === 1 ? 'Concluir y Finalizar Partida' : `Concluir Set ${setActivo} y Registrar Ganador`}</span>
+              </button>
             )}
           </div>
         )}

@@ -436,21 +436,22 @@ export async function marcadorAccion(
     throw new Error('No es el turno de este jugador. El juez debe autorizar el cambio de turno primero.');
   }
 
-  // REGLA 3: Verificar si el set ya alcanzó el límite reglamentario de entradas o está en desempate
+  // Verificar si el set ya está concluido o en desempate formal
+  if (set.ganador_id) {
+    throw new Error('El set ya está finalizado. No se pueden modificar carambolas.');
+  }
+  if (set.desempate_oro) {
+    throw new Error('El set se encuentra en desempate por Carambola de Oro. No se pueden modificar carambolas.');
+  }
+
   const limiteEntradas = partida.modo_libre ? null : (partida.limite_entradas ?? null);
   const entradasSalida = set.entradas.filter((e) => e.jugador_id === salidaId);
   const entradasContra = set.entradas.filter((e) => e.jugador_id === contraId);
 
-  const sumaA = set.entradas.filter((e) => e.jugador_id === partida.jugador_a_id).reduce((acc, e) => acc + e.carambolas, 0);
-  const sumaB = set.entradas.filter((e) => e.jugador_id === partida.jugador_b_id).reduce((acc, e) => acc + e.carambolas, 0);
-  const { es_empate } = evaluarResultadoSet(sumaA, sumaB, partida.meta_a, partida.meta_b);
-
-  if (limiteEntradas && entradasSalida.length >= limiteEntradas && entradasContra.length >= limiteEntradas) {
+  // Solo se bloquea si ambos completaron ya sus entradas reglamentarias y el turno no es de contrasalida jugando su entrada límite:
+  const contraEnTurnoFinal = turnoActualId === contraId && entradasContra.length <= (limiteEntradas ?? 999);
+  if (limiteEntradas && entradasSalida.length >= limiteEntradas && entradasContra.length >= limiteEntradas && !contraEnTurnoFinal) {
     throw new Error('Se ha completado el límite reglamentario de entradas. Debe definirse el set o la Carambola de Oro.');
-  }
-
-  if (es_empate && limiteEntradas && entradasSalida.length >= limiteEntradas && entradasContra.length >= limiteEntradas) {
-    throw new Error('El set se encuentra en desempate por Carambola de Oro. No se pueden modificar carambolas.');
   }
 
   // Buscar la última entrada del jugador en turno
